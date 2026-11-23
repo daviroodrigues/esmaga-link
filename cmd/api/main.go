@@ -1,0 +1,157 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/daviroodrigues/esmaga-api/internal/config"
+	httpHandler "github.com/daviroodrigues/esmaga-api/internal/handler/http"
+	"github.com/daviroodrigues/esmaga-api/internal/idgen"
+	"github.com/daviroodrigues/esmaga-api/internal/queue/rabbitmq"
+	cassRepo "github.com/daviroodrigues/esmaga-api/internal/repository/cassandra"
+	pgRepo "github.com/daviroodrigues/esmaga-api/internal/repository/postgres"
+	redisRepo "github.com/daviroodrigues/esmaga-api/internal/repository/redis"
+	"github.com/daviroodrigues/esmaga-api/internal/security"
+	"github.com/daviroodrigues/esmaga-api/internal/service"
+	"github.com/gocql/gocql"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
+)
+
+// @title						Esmaga Link API
+// @version					1.0
+// @description				API de encurtamento de URLs de alta performance com redirecionamento rápido e rastreamento assíncrono de cliques.
+// @BasePath					/
+// @securityDefinitions.apikey	BearerAuth
+// @in							header
+// @name						Authorization
+// @description				Informe o token JWT no formato: Bearer {token}
+func main() {
+	cfg := config.Load()
+	log.Printf("[%s] Iniciando Esmaga Link API na porta %s...", cfg.InstanceID, cfg.Port)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// 1. Conexão com PostgreSQL
+	pgPool, err := pgxpool.New(ctx, cfg.PostgresURL)
+	if err != nil {
+		log.Fatalf("Falha ao conectar no PostgreSQL: %v", err)
+	}
+	defer pgPool.Close()
+
+	if err := pgPool.Ping(ctx); err != nil {
+		log.Printf("Aviso: Ping no PostgreSQL falhou: %v", err)
+	} else {
+		log.Printf("[%s] Conectado ao PostgreSQL com sucesso.", cfg.InstanceID)
+	}
+
+	// 2. Conexão com Cassandra
+	cassHosts := strings.Split(cfg.CassandraHosts, ",")
+	cluster := gocql.NewCluster(cassHosts...)
+	cluster.Keyspace = cfg.CassandraKeyspace
+	cluster.Consistency = gocql.Quorum
+	cluster.ConnectTimeout = 10 * time.Second
+	cluster.Timeout = 5 * time.Second
+
+	cassSession, err := cluster.CreateSession()
+	if err != nil {
+		log.Fatalf("Falha ao conectar no Cassandra: %v", err)
+	}
+	defer cassSession.Close()
+	log.Printf("[%s] Conectado ao Cassandra com sucesso.", cfg.InstanceID)
+
+	// 3. Conexão com Redis
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     cfg.RedisAddr,
+		Password: cfg.RedisPassword,
+	})
+	defer rdb.Close()
+	if err := rdb.Ping(ctx).Err(); err != nil {
+		log.Fatalf("Falha ao conectar no Redis: %v", err)
+	}
+	log.Printf("[%s] Conectado ao Redis com sucesso.", cfg.InstanceID)
+
+	// 4. Conexão com RabbitMQ Publisher
+	publisher, err := rabbitmq.NewPublisher(cfg.RabbitMQURL)
+	if err != nil {
+		log.Printf("Aviso: Falha ao conectar RabbitMQ Publisher (%v). Ingestão assíncrona desabilitada.", err)
+	} else {
+		defer publisher.Close()
+		log.Printf("[%s] Conectado ao RabbitMQ Publisher.", cfg.InstanceID)
+	}
+
+	// 5. Injeção de Repositórios Básicos
+	userRepository := pgRepo.NewUserRepository(pgPool)
+	linkRepository := cassRepo.NewLinkRepository(cassSession)
+	cacheRepository := redisRepo.NewCacheRepository(rdb)
+	urlValidator := security.NewURLValidator(nil)
+
+	// 6. Inicialização do Motor de IDs com SSOT no Cassandra
+	base62Enc, err := idgen.NewBase62EncoderWithSeed(cfg.AlphabetSeed, 6)
+	if err != nil {
+		log.Fatalf("Falha ao inicializar Base62 encoder: %v", err)
+	}
+
+	eraConfig, err := idgen.DefaultEra6Chars()
+	if err != nil {
+		log.Fatalf("Falha ao inicializar Era: %v", err)
+	}
+
+	idGenerator, err := idgen.NewIDGenerator(rdb, "esmaga:counter:id_sequence", cfg.IDBatchSize, eraConfig, base62Enc, linkRepository)
+	if err != nil {
+		log.Fatalf("Falha ao criar IDGenerator: %v", err)
+	}
+
+	// Sincroniza / recupera estado com Cassandra caso o Redis tenha reiniciado sem volume
+	if err := idGenerator.InitOrRecover(ctx); err != nil {
+		log.Printf("Aviso: Falha ao executar InitOrRecover do IDGenerator: %v", err)
+	} else {
+		log.Printf("[%s] Motor de IDs sincronizado com sucesso com o Cassandra (SSOT).", cfg.InstanceID)
+	}
+
+	// 7. Injeção de Serviços e Handlers
+	authService := service.NewAuthService(userRepository, cfg.JWTSecret)
+	linkService := service.NewLinkService(idGenerator, linkRepository, cacheRepository, publisher, authService, urlValidator)
+
+	authHandler := httpHandler.NewAuthHandler(authService, linkService)
+	linkHandler := httpHandler.NewLinkHandler(linkService)
+	redirectHandler := httpHandler.NewRedirectHandler(linkService)
+
+	router := httpHandler.NewRouter(cfg.InstanceID, authService, authHandler, linkHandler, redirectHandler)
+
+	srv := &http.Server{
+		Addr:         ":" + cfg.Port,
+		Handler:      router,
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
+
+	// Graceful Shutdown
+	go func() {
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+		<-sigChan
+
+		log.Printf("[%s] Encerrando servidor graciosamente...", cfg.InstanceID)
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer shutdownCancel()
+
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			log.Printf("Erro no encerramento: %v", err)
+		}
+	}()
+
+	log.Printf("[%s] Servidor pronto para atender requisições em :%s", cfg.InstanceID, cfg.Port)
+	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Fatalf("Erro fatal no servidor HTTP: %v", err)
+	}
+}

@@ -36,10 +36,18 @@ A lógica de **Reserva em Lote** via Redis é o coração que permite múltiplas
 
 ### O Conceito de "Eras" e Ofuscação
 
-  * **Base62 Customizada:** Alfabeto embaralhado via Seed em variáveis de ambiente.
-  * **Multiplicador Primo:** Garante que IDs sequenciais resultem em hashes distantes.
+* **Base62 Customizada:** Alfabeto embaralhado via Seed em variáveis de ambiente.
+* **Multiplicador Coprimo Otimizado (Fibonacci Hashing):** Garante que IDs sequenciais resultem em hashes visualmente caóticos e distantes entre si.
 
-    $$\text{ID}_{\text{final}} = (\text{ID}_{\text{sequencial}} \times \text{Primo}_{\text{da Era}}) \bmod \text{Tamanho}_{\text{da Era}} + \text{Início}_{\text{da Era}}$$
+$$\text{ID}_{\text{final}} = (\text{ID}_{\text{sequencial}} \times \text{Primo}_{\text{da Era}}) \bmod \text{Tamanho}_{\text{da Era}} + \text{Início}_{\text{da Era}}$$
+
+* **Por que o multiplicador precisa ser coprimo?**
+Para que a transformação acima gere uma permutação completa (bijetora) dos valores dentro da Era, ou seja, sem colisões e cobrindo todo o intervalo, é estritamente necessário que o multiplicador e o tamanho do intervalo sejam coprimos, representados pela regra $\mathrm{mdc}(\text{Primo}_{\text{da Era}}, \text{Tamanho}_{\text{da Era}}) = 1$.
+  * Sendo coprimos, o multiplicador possui um inverso multiplicativo módulo o tamanho do intervalo. Isso assegura que cada ID sequencial gere um valor único e que absolutamente todos os valores do intervalo sejam utilizados de forma embaralhada.
+  * Caso contrário, a função perde a sua injetividade, causando colisões diretas e um imenso desperdício de espaço no intervalo, o que inviabilizaria por completo a geração de identificadores únicos para o encurtador.
+
+* **A Regra de Ouro (Proporção Áurea):**
+Para evitar padrões de "tabuada" (primos muito pequenos) ou de "contagem regressiva" (primos muito próximos ao teto do intervalo), o multiplicador ideal é calculado utilizando a Proporção Áurea ($\approx 0.618033$). O sistema deve calcular $\text{Tamanho}_{\text{da Era}} \times 0.618033$ e selecionar o número coprimo mais próximo a esse alvo. Isso garante que os saltos entre os IDs consecutivos oscilem agressivamente de uma ponta a outra do espectro, eliminando qualquer previsibilidade visual para os usuários.
 
 ## Estratégia de Dados e Armazenamento
 
@@ -78,3 +86,8 @@ O redirecionamento (302) é prioridade absoluta. O registro de métricas ocorre 
 | `[ ]`  | **Fase 3: Segurança**    | Proteção de Borda    | Rate Limiting e integração com Google Safe Browsing.                         |
 | `[ ]`  | **Fase 4: API: Escrita** | Endpoints de Criação | Lógica em Go para salvar links e gerenciar permissões.                       |
 | `[ ]`  | **Fase 5: API: Leitura** | Redirecionamento     | Foco no SLO de 15ms.                                                         |
+
+
+
+
+

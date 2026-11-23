@@ -1,0 +1,334 @@
+basePath: /
+definitions:
+  domain.CreateLinkRequest:
+    properties:
+      original_url:
+        type: string
+    type: object
+  domain.DeleteAccountRequest:
+    properties:
+      keep_links_active:
+        description: 'default true: torna anônimo e imutável'
+        type: boolean
+    type: object
+  domain.EditLinkRequest:
+    properties:
+      original_url:
+        type: string
+    type: object
+  domain.Link:
+    properties:
+      created_at:
+        type: string
+      is_active:
+        type: boolean
+      original_url:
+        type: string
+      short_code:
+        type: string
+      user_id:
+        type: string
+    type: object
+  domain.User:
+    properties:
+      created_at:
+        type: string
+      email:
+        type: string
+      id:
+        type: string
+      role:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  http.AuthRequest:
+    properties:
+      email:
+        example: usuario@exemplo.com
+        type: string
+      password:
+        example: senha123
+        type: string
+    type: object
+  http.DeleteAccountResponse:
+    properties:
+      keep_links_active:
+        example: true
+        type: boolean
+      message:
+        example: conta excluída com sucesso
+        type: string
+    type: object
+  http.EditLinkResponse:
+    properties:
+      message:
+        example: link atualizado com sucesso
+        type: string
+      original_url:
+        example: https://exemplo.com/novo-destino
+        type: string
+      short_code:
+        example: aB3x9Z
+        type: string
+    type: object
+  http.ErrorResponse:
+    properties:
+      error:
+        example: mensagem de erro
+        type: string
+    type: object
+  http.HealthResponse:
+    properties:
+      instance:
+        example: api-1
+        type: string
+      status:
+        example: ok
+        type: string
+    type: object
+  http.LoginResponse:
+    properties:
+      token:
+        example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        type: string
+    type: object
+info:
+  contact: {}
+  description: API de encurtamento de URLs de alta performance com redirecionamento
+    rápido e rastreamento assíncrono de cliques.
+  title: Esmaga Link API
+  version: "1.0"
+paths:
+  /api/v1/auth/account:
+    delete:
+      consumes:
+      - application/json
+      description: Exclui a conta do usuário autenticado, permitindo escolher se os
+        links permanecem ativos
+      parameters:
+      - description: Opções de exclusão
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/domain.DeleteAccountRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.DeleteAccountResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Excluir conta do usuário
+      tags:
+      - Auth
+  /api/v1/auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Autentica o usuário e retorna um token JWT
+      parameters:
+      - description: Credenciais de acesso
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/http.AuthRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.LoginResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Autenticar usuário
+      tags:
+      - Auth
+  /api/v1/auth/register:
+    post:
+      consumes:
+      - application/json
+      description: Cria uma nova conta de usuário com e-mail e senha (mínimo 6 caracteres)
+      parameters:
+      - description: Dados de cadastro
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/http.AuthRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/domain.User'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Cadastrar novo usuário
+      tags:
+      - Auth
+  /api/v1/links:
+    get:
+      description: Retorna todos os links criados pelo usuário autenticado
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/domain.Link'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Listar links do usuário
+      tags:
+      - Links
+    post:
+      consumes:
+      - application/json
+      description: Cria um novo link encurtado. Aceita requisições anônimas ou autenticadas
+        via Bearer token.
+      parameters:
+      - description: URL original para encurtar
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/domain.CreateLinkRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/domain.Link'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Encurtar URL
+      tags:
+      - Links
+  /api/v1/links/{code}:
+    put:
+      consumes:
+      - application/json
+      description: Atualiza a URL original de um link pertencente ao usuário autenticado
+      parameters:
+      - description: Código curto do link
+        in: path
+        name: code
+        required: true
+        type: string
+      - description: Nova URL original
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/domain.EditLinkRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.EditLinkResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Editar URL de destino de um link
+      tags:
+      - Links
+  /healthz:
+    get:
+      description: Retorna o status da instância da API
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.HealthResponse'
+      summary: Health check da API
+      tags:
+      - Health
+  /r/{code}:
+    get:
+      description: Redireciona (HTTP 302) para a URL original associada ao código
+        curto e registra o clique de forma assíncrona
+      parameters:
+      - description: Código curto do link
+        in: path
+        name: code
+        required: true
+        type: string
+      responses:
+        "302":
+          description: Redirecionamento para a URL original
+          schema:
+            type: string
+        "404":
+          description: Link não encontrado
+          schema:
+            type: string
+      summary: Redirecionar para URL original
+      tags:
+      - Redirect
+securityDefinitions:
+  BearerAuth:
+    description: 'Informe o token JWT no formato: Bearer {token}'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

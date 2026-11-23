@@ -1,0 +1,148 @@
+services:
+  # ==========================================
+  # INFRAESTRUTURA DE DADOS E MENSAGERIA
+  # ==========================================
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: esmaga-postgres
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-esmaga_auth}
+      POSTGRES_USER: ${POSTGRES_USER:-esmaga_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-esmaga_secret}
+    volumes:
+      - ./deployments/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-esmaga_user} -d ${POSTGRES_DB:-esmaga_auth}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  cassandra:
+    image: cassandra:4.1
+    container_name: esmaga-cassandra
+    restart: always
+    environment:
+      CASSANDRA_CLUSTER_NAME: "esmaga-cluster"
+      CASSANDRA_DC: "datacenter1"
+      CASSANDRA_ENDPOINT_SNITCH: "GossipingPropertyFileSnitch"
+      MAX_HEAP_SIZE: "512M"
+      HEAP_NEWSIZE: "128M"
+    volumes:
+      - cassandradata:/var/lib/cassandra
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'describe cluster' || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
+
+  cassandra-init:
+    image: cassandra:4.1
+    container_name: esmaga-cassandra-init
+    depends_on:
+      cassandra:
+        condition: service_healthy
+    volumes:
+      - ./deployments/cassandra/init.cql:/init.cql:ro
+    command: >
+      bash -c "cqlsh cassandra 9042 -f /init.cql && echo 'Cassandra schema inicializado com sucesso!'"
+    restart: "no"
+
+  redis:
+    image: redis:7-alpine
+    container_name: esmaga-redis
+    restart: always
+    command: redis-server --appendonly yes
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: esmaga-rabbitmq
+    restart: always
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-guest}
+    volumes:
+      - rabbitmqdata:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  # ==========================================
+  # SERVIÇOS DE APLICAÇÃO GO
+  # ==========================================
+
+  api:
+    build:
+      context: .
+      dockerfile: deployments/api/Dockerfile
+    container_name: esmaga-api
+    restart: always
+    environment:
+      PORT: "8080"
+      INSTANCE_ID: "api-1"
+      POSTGRES_URL: "postgres://${POSTGRES_USER:-esmaga_user}:${POSTGRES_PASSWORD:-esmaga_secret}@postgres:5432/${POSTGRES_DB:-esmaga_auth}?sslmode=disable"
+      CASSANDRA_HOSTS: "cassandra"
+      CASSANDRA_KEYSPACE: "esmaga_link"
+      REDIS_ADDR: "redis:6379"
+      RABBITMQ_URL: "amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/"
+      JWT_SECRET: ${JWT_SECRET}
+      ALPHABET_SEED: ${ALPHABET_SEED}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      cassandra:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: deployments/worker/Dockerfile
+    container_name: esmaga-worker
+    restart: always
+    environment:
+      CASSANDRA_HOSTS: "cassandra"
+      CASSANDRA_KEYSPACE: "esmaga_link"
+      RABBITMQ_URL: "amqp://${RABBITMQ_USER}:${RABBITMQ_PASS}@rabbitmq:5672/"
+    depends_on:
+      cassandra:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  # ==========================================
+  # REVERSE PROXY (NGINX)
+  # ==========================================
+
+  nginx:
+    image: nginx:alpine
+    container_name: esmaga-nginx
+    restart: always
+    ports:
+      - "${HOST_NGINX_PORT}:80"
+    volumes:
+      - ./deployments/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  cassandradata:
+  redisdata:
+  rabbitmqdata:

@@ -12,7 +12,7 @@
 
 At its core, it abandons random generators and database locks in favor of a **deterministic modular bijection** over a finite ring: $O(1)$ generation time, local reversibility without I/O, and **zero collisions by algebraic construction**.
 
-![Demonstration: coprime mapping over the Z_M ring with a golden-ratio-derived multiplier](docs/assets/demo.gif)
+![Demonstration: coprime mapping over the Z_M ring with a golden-ratio-derived multiplier](docs/assets/demo_en.gif)
 
 *Each frame illustrates a batch of IDs being consumed in an intra-batch permuted order (a mechanism deliberately applied on every instance to prevent sequential correlation), whose entropy is further amplified across multiple concurrent nodes. The yellow trail demonstrates that all 10 IDs already land dispersed across the ring prior to the first access, serving as visual proof that spatial dispersion is independent of consumption order.*
 

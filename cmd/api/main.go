@@ -70,8 +70,10 @@ func main() {
 
 	// 3. Conexão com Redis
 	rdb := redis.NewClient(&redis.Options{
-		Addr:     cfg.RedisAddr,
-		Password: cfg.RedisPassword,
+		Addr:         cfg.RedisAddr,
+		Password:     cfg.RedisPassword,
+		PoolSize:     64,
+		MinIdleConns: 16,
 	})
 	defer rdb.Close()
 	if err := rdb.Ping(ctx).Err(); err != nil {
@@ -94,18 +96,18 @@ func main() {
 	cacheRepository := redisRepo.NewCacheRepository(rdb)
 	urlValidator := security.NewURLValidator(nil)
 
-	// 6. Inicialização do Motor de IDs com SSOT no Cassandra
-	base62Enc, err := idgen.NewBase62EncoderWithSeed(cfg.AlphabetSeed, 6)
+	// 6. Inicialização do Motor de IDs com SSOT no Cassandra (Eras: 5 → 6 → 7)
+	base62Enc, err := idgen.NewBase62EncoderWithSeed(cfg.AlphabetSeed, 5)
 	if err != nil {
 		log.Fatalf("Falha ao inicializar Base62 encoder: %v", err)
 	}
 
-	eraConfig, err := idgen.DefaultEra6Chars()
+	eras, err := idgen.DefaultEras()
 	if err != nil {
-		log.Fatalf("Falha ao inicializar Era: %v", err)
+		log.Fatalf("Falha ao inicializar Eras: %v", err)
 	}
 
-	idGenerator, err := idgen.NewIDGenerator(rdb, "esmaga:counter:id_sequence", cfg.IDBatchSize, eraConfig, base62Enc, linkRepository)
+	idGenerator, err := idgen.NewMultiEraIDGenerator(rdb, "esmaga:counter:id_sequence", cfg.IDBatchSize, eras, base62Enc, linkRepository)
 	if err != nil {
 		log.Fatalf("Falha ao criar IDGenerator: %v", err)
 	}

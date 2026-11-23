@@ -53,8 +53,10 @@ func (h *RedirectHandler) HandleRedirect(w http.ResponseWriter, r *http.Request)
 	}
 	h.linkService.TrackClickAsync(event)
 
-	// Resposta 302 imediata
-	http.Redirect(w, r, originalURL, http.StatusFound)
+	// Resposta 302 imediata sem alocação de corpo HTML
+	w.Header().Set("Location", originalURL)
+	w.Header().Set("Cache-Control", "private, max-age=90")
+	w.WriteHeader(http.StatusFound)
 }
 
 func getRealIP(r *http.Request) string {

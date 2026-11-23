@@ -5,20 +5,26 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"sync"
+	"time"
 
 	"github.com/daviroodrigues/esmaga-api/internal/domain"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 const (
-	ExchangeClicks = "clicks.topic"
-	QueueClicks    = "clicks.cassandra.writer"
-	RoutingKey     = "click.created"
+	ExchangeClicks      = "clicks.topic"
+	QueueClicks         = "clicks.cassandra.writer"
+	RoutingKey          = "click.created"
+	publishBufferSize   = 4096
 )
 
 type Publisher struct {
-	conn    *amqp.Connection
-	channel *amqp.Channel
+	conn      *amqp.Connection
+	channel   *amqp.Channel
+	events    chan *domain.ClickEvent
+	done      chan struct{}
+	closeOnce sync.Once
 }
 
 func NewPublisher(url string) (*Publisher, error) {
@@ -49,7 +55,33 @@ func NewPublisher(url string) (*Publisher, error) {
 		return nil, fmt.Errorf("erro ao declarar exchange: %w", err)
 	}
 
-	return &Publisher{conn: conn, channel: ch}, nil
+	p := &Publisher{
+		conn:    conn,
+		channel: ch,
+		events:  make(chan *domain.ClickEvent, publishBufferSize),
+		done:    make(chan struct{}),
+	}
+	go p.publishLoop()
+
+	return p, nil
+}
+
+func (p *Publisher) publishLoop() {
+	defer close(p.done)
+	for event := range p.events {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		_ = p.PublishClick(ctx, event)
+		cancel()
+	}
+}
+
+// EnqueueClick enfileira o evento sem bloquear o hot path e sem abrir novas goroutines.
+func (p *Publisher) EnqueueClick(event *domain.ClickEvent) {
+	select {
+	case p.events <- event:
+	default:
+		// Buffer cheio sob pico extremo: descarta telemetria sem degradar o redirect
+	}
 }
 
 func (p *Publisher) PublishClick(ctx context.Context, event *domain.ClickEvent) error {
@@ -73,12 +105,18 @@ func (p *Publisher) PublishClick(ctx context.Context, event *domain.ClickEvent) 
 }
 
 func (p *Publisher) Close() {
-	if p.channel != nil {
-		_ = p.channel.Close()
-	}
-	if p.conn != nil {
-		_ = p.conn.Close()
-	}
+	p.closeOnce.Do(func() {
+		if p.events != nil {
+			close(p.events)
+			<-p.done
+		}
+		if p.channel != nil {
+			_ = p.channel.Close()
+		}
+		if p.conn != nil {
+			_ = p.conn.Close()
+		}
+	})
 }
 
 // Consumer gerencia o processamento assíncrono de eventos de clique

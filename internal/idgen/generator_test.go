@@ -153,11 +153,11 @@ func TestLCGNthMatchesIterative(t *testing.T) {
 }
 
 func TestPrepareBatchShufflesWithoutCollisions(t *testing.T) {
-	era, err := DefaultEra6Chars()
+	eras, err := DefaultEras()
 	if err != nil {
-		t.Fatalf("Erro ao criar Era padrão: %v", err)
+		t.Fatalf("Erro ao criar Eras padrão: %v", err)
 	}
-	enc, err := NewBase62EncoderWithSeed("test-seed-batch", 6)
+	enc, err := NewBase62EncoderWithSeed("test-seed-batch", 5)
 	if err != nil {
 		t.Fatalf("Erro ao criar Base62Encoder: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestPrepareBatchShufflesWithoutCollisions(t *testing.T) {
 	gen := &IDGenerator{
 		batchSize: batchSize,
 		batch:     make([]uint64, 0, batchSize),
-		era:       era,
+		eras:      eras,
 		encoder:   enc,
 	}
 
@@ -193,9 +193,9 @@ func TestPrepareBatchShufflesWithoutCollisions(t *testing.T) {
 			sequentialCount++
 		}
 
-		code := gen.encoder.Encode(gen.era.Obfuscate(seqID))
-		if len(code) != 6 {
-			t.Fatalf("Tamanho de short_code inválido: %s", code)
+		code := gen.encodeSeqID(seqID)
+		if len(code) != 5 {
+			t.Fatalf("Tamanho de short_code inválido na Era 5: %s (len=%d)", code, len(code))
 		}
 		if seenCodes[code] {
 			t.Fatalf("Colisão de short_code no lote: %s", code)
@@ -205,5 +205,42 @@ func TestPrepareBatchShufflesWithoutCollisions(t *testing.T) {
 
 	if sequentialCount == int(batchSize) {
 		t.Fatalf("O lote não foi aleatorizado (todos os %d IDs permaneceram em ordem sequencial)", batchSize)
+	}
+}
+
+func TestMultiEraProgression5To6To7(t *testing.T) {
+	eras, err := DefaultEras()
+	if err != nil {
+		t.Fatalf("DefaultEras() falhou: %v", err)
+	}
+	enc, err := NewBase62EncoderWithSeed("test-seed-eras", 5)
+	if err != nil {
+		t.Fatalf("NewBase62EncoderWithSeed() falhou: %v", err)
+	}
+
+	gen := &IDGenerator{
+		eras:    eras,
+		encoder: enc,
+	}
+
+	// Primeiro e último ID da Era 5
+	if got := gen.encodeSeqID(1); len(got) != 5 {
+		t.Fatalf("seqID=1 deveria gerar código de 5 chars, obteve %q (len=%d)", got, len(got))
+	}
+	if got := gen.encodeSeqID(DefaultUniverseSize62_5); len(got) != 5 {
+		t.Fatalf("último ID da Era 5 deveria gerar 5 chars, obteve %q (len=%d)", got, len(got))
+	}
+
+	// Transição exata para Era 6
+	if got := gen.encodeSeqID(DefaultUniverseSize62_5 + 1); len(got) != 6 {
+		t.Fatalf("primeiro ID da Era 6 deveria gerar 6 chars, obteve %q (len=%d)", got, len(got))
+	}
+	if got := gen.encodeSeqID(DefaultUniverseSize62_5 + DefaultUniverseSize62_6); len(got) != 6 {
+		t.Fatalf("último ID da Era 6 deveria gerar 6 chars, obteve %q (len=%d)", got, len(got))
+	}
+
+	// Transição exata para Era 7
+	if got := gen.encodeSeqID(DefaultUniverseSize62_5 + DefaultUniverseSize62_6 + 1); len(got) != 7 {
+		t.Fatalf("primeiro ID da Era 7 deveria gerar 7 chars, obteve %q (len=%d)", got, len(got))
 	}
 }

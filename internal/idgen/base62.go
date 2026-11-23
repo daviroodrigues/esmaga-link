@@ -68,12 +68,17 @@ func NewBase62EncoderWithSeed(seed string, minPadLen int) (*Base62Encoder, error
 	return NewBase62Encoder(alphabet, minPadLen)
 }
 
-// Encode converte um uint64 em string Base62 com padding opcional.
+// Encode converte um uint64 em string Base62 usando o padding padrão do encoder.
 func (b *Base62Encoder) Encode(num uint64) string {
+	return b.EncodeWithPad(num, b.minPadLen)
+}
+
+// EncodeWithPad converte um uint64 em string Base62 com comprimento mínimo explícito.
+func (b *Base62Encoder) EncodeWithPad(num uint64, minPadLen int) string {
 	if num == 0 {
 		pad := string(b.alphabet[0])
-		if b.minPadLen > 1 {
-			return strings.Repeat(pad, b.minPadLen)
+		if minPadLen > 1 {
+			return strings.Repeat(pad, minPadLen)
 		}
 		return pad
 	}
@@ -94,8 +99,8 @@ func (b *Base62Encoder) Encode(num uint64) string {
 	}
 
 	encoded := string(runes)
-	if len(encoded) < b.minPadLen {
-		padCount := b.minPadLen - len(encoded)
+	if len(encoded) < minPadLen {
+		padCount := minPadLen - len(encoded)
 		encoded = strings.Repeat(string(b.alphabet[0]), padCount) + encoded
 	}
 

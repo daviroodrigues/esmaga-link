@@ -101,7 +101,7 @@ func (r *LinkRepository) GetByCode(ctx context.Context, shortCode string) (*doma
 		createdAt time.Time
 	)
 
-	err := r.session.Query(query, shortCode).WithContext(ctx).
+	err := r.session.Query(query, shortCode).Consistency(gocql.LocalOne).WithContext(ctx).
 		Scan(&code, &url, &userUUID, &isActive, &createdAt)
 	if err != nil {
 		if err == gocql.ErrNotFound {

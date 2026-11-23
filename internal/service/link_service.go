@@ -23,10 +23,17 @@ var (
 	ErrInvalidURL       = errors.New("a URL informada é inválida")
 )
 
+const (
+	l1CacheMaxEntries = 50000
+	l1CacheTTL        = 30 * time.Second
+	redisCacheTTL     = 24 * time.Hour
+)
+
 type LinkService struct {
 	idGen       *idgen.IDGenerator
 	linkRepo    *cassandra.LinkRepository
 	cacheRepo   *redis.CacheRepository
+	l1Cache     *l1Cache
 	publisher   *rabbitmq.Publisher
 	authService *AuthService
 	validator   *security.URLValidator
@@ -44,6 +51,7 @@ func NewLinkService(
 		idGen:       idGen,
 		linkRepo:    linkRepo,
 		cacheRepo:   cacheRepo,
+		l1Cache:     newL1Cache(l1CacheMaxEntries),
 		publisher:   publisher,
 		authService: authService,
 		validator:   validator,
@@ -97,18 +105,31 @@ func (s *LinkService) CreateLink(ctx context.Context, originalURL string, userID
 		return nil, fmt.Errorf("erro ao salvar link: %w", err)
 	}
 
-	// Pré-aquece o cache no Redis (24 horas)
-	_ = s.cacheRepo.SetLink(ctx, link.ShortCode, originalURL, 24*time.Hour)
+	// Pré-aquece L1 (memória) e L2 (Redis)
+	if s.l1Cache != nil {
+		s.l1Cache.Set(link.ShortCode, originalURL, l1CacheTTL)
+	}
+	_ = s.cacheRepo.SetLink(ctx, link.ShortCode, originalURL, redisCacheTTL)
 
 	return link, nil
 }
 
 // GetLinkByCode implementa o caminho crítico (SLO < 15ms):
-// 1. Tenta Redis Cache
-// 2. Se miss, busca Cassandra e popula Redis
+// 1. Tenta Cache L1 em memória
+// 2. Tenta Cache L2 no Redis
+// 3. Se miss, busca Cassandra e popula L1 + Redis (assíncrono)
 func (s *LinkService) GetLinkByCode(ctx context.Context, shortCode string) (string, error) {
+	if s.l1Cache != nil {
+		if cachedURL, ok := s.l1Cache.Get(shortCode); ok {
+			return cachedURL, nil
+		}
+	}
+
 	cachedURL, err := s.cacheRepo.GetLink(ctx, shortCode)
 	if err == nil && cachedURL != "" {
+		if s.l1Cache != nil {
+			s.l1Cache.Set(shortCode, cachedURL, l1CacheTTL)
+		}
 		return cachedURL, nil
 	}
 
@@ -121,8 +142,16 @@ func (s *LinkService) GetLinkByCode(ctx context.Context, shortCode string) (stri
 		return "", ErrLinkNotFound
 	}
 
-	// Popula cache para os próximos acessos
-	_ = s.cacheRepo.SetLink(ctx, shortCode, link.OriginalURL, 24*time.Hour)
+	if s.l1Cache != nil {
+		s.l1Cache.Set(shortCode, link.OriginalURL, l1CacheTTL)
+	}
+
+	// Popula Redis em background para não atrasar a resposta 302
+	go func(code, targetURL string) {
+		bgCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = s.cacheRepo.SetLink(bgCtx, code, targetURL, redisCacheTTL)
+	}(shortCode, link.OriginalURL)
 
 	return link.OriginalURL, nil
 }
@@ -162,7 +191,10 @@ func (s *LinkService) EditLink(ctx context.Context, shortCode string, userID uui
 		return err
 	}
 
-	// Invalida cache no Redis
+	// Invalida cache L1 e Redis
+	if s.l1Cache != nil {
+		s.l1Cache.Delete(shortCode)
+	}
 	_ = s.cacheRepo.DeleteLink(ctx, shortCode)
 
 	return nil
@@ -201,6 +233,9 @@ func (s *LinkService) DeleteAccount(ctx context.Context, userID uuid.UUID, keepL
 			return err
 		}
 		for _, code := range codes {
+			if s.l1Cache != nil {
+				s.l1Cache.Delete(code)
+			}
 			_ = s.cacheRepo.DeleteLink(ctx, code)
 		}
 	}
@@ -213,10 +248,5 @@ func (s *LinkService) TrackClickAsync(event *domain.ClickEvent) {
 	if s.publisher == nil {
 		return
 	}
-	// Disparo assíncrono em goroutine para não atrasar a resposta 302
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = s.publisher.PublishClick(ctx, event)
-	}()
+	s.publisher.EnqueueClick(event)
 }

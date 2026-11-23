@@ -12,16 +12,27 @@ import (
 )
 
 const (
-	// DefaultUniverseSize62_6 representa o universo de 62^6 códigos (2^6 * 31^6)
+	// DefaultUniverseSize62_5 representa o universo de 62^5 códigos (~916 milhões)
+	DefaultUniverseSize62_5 uint64 = 916132832
+	DefaultHullDobellA5     uint64 = 566165401 // (A - 1) % 124 == 0
+	DefaultHullDobellC5     uint64 = 271828183 // coprimo com 62^5
+
+	// DefaultUniverseSize62_6 representa o universo de 62^6 códigos (~56.8 bilhões)
 	DefaultUniverseSize62_6 uint64 = 56800235584
 	// DefaultHullDobellA é o multiplicador ajustado para satisfazer (A - 1) % 124 == 0
 	DefaultHullDobellA uint64 = 3141592701
 	// DefaultHullDobellC é o incremento coprimo com 62^6
 	DefaultHullDobellC uint64 = 2718281829
+
+	// DefaultUniverseSize62_7 representa o universo de 62^7 códigos (~3.52 trilhões)
+	DefaultUniverseSize62_7 uint64 = 3521614606208
+	DefaultHullDobellA7     uint64 = 2176510000001 // (A - 1) % 124 == 0
+	DefaultHullDobellC7     uint64 = 1414213562373 // coprimo com 62^7
 )
 
 // EraConfig define os parâmetros matemáticos de uma Era
 type EraConfig struct {
+	CodeLength int    // Comprimento fixo dos códigos nesta era (ex: 5, 6, 7)
 	EraStart   uint64
 	EraSize    uint64
 	Multiplier uint64 // Número coprimo com EraSize ou multiplicador A do LCG
@@ -29,21 +40,51 @@ type EraConfig struct {
 	Seed       uint64 // Semente inicial do LCG (X_0)
 }
 
-// DefaultEra6Chars cria uma configuração padrão de Era para códigos de 6 caracteres (~56.8 bilhões de links)
-// utilizando LCG com constantes validadas pelo Teorema de Hull-Dobell (período completo sem colisões).
-func DefaultEra6Chars() (EraConfig, error) {
+func newHullDobellEra(codeLength int, size, a, c uint64) (EraConfig, error) {
 	era := EraConfig{
+		CodeLength: codeLength,
 		EraStart:   0,
-		EraSize:    DefaultUniverseSize62_6,
-		Multiplier: DefaultHullDobellA,
-		Increment:  DefaultHullDobellC,
+		EraSize:    size,
+		Multiplier: a,
+		Increment:  c,
 		Seed:       0,
 	}
 	if !IsHullDobellValid(era.Multiplier, era.Increment, era.EraSize) {
 		return EraConfig{}, errors.New("constantes LCG da era não satisfazem o Teorema de Hull-Dobell")
 	}
-
 	return era, nil
+}
+
+// DefaultEra5Chars cria a Era inicial para códigos de 5 caracteres (~916 milhões de links).
+func DefaultEra5Chars() (EraConfig, error) {
+	return newHullDobellEra(5, DefaultUniverseSize62_5, DefaultHullDobellA5, DefaultHullDobellC5)
+}
+
+// DefaultEra6Chars cria a Era para códigos de 6 caracteres (~56.8 bilhões de links).
+func DefaultEra6Chars() (EraConfig, error) {
+	return newHullDobellEra(6, DefaultUniverseSize62_6, DefaultHullDobellA, DefaultHullDobellC)
+}
+
+// DefaultEra7Chars cria a Era para códigos de 7 caracteres (~3.52 trilhões de links).
+func DefaultEra7Chars() (EraConfig, error) {
+	return newHullDobellEra(7, DefaultUniverseSize62_7, DefaultHullDobellA7, DefaultHullDobellC7)
+}
+
+// DefaultEras retorna a progressão padrão de eras: 5 → 6 → 7 caracteres.
+func DefaultEras() ([]EraConfig, error) {
+	e5, err := DefaultEra5Chars()
+	if err != nil {
+		return nil, err
+	}
+	e6, err := DefaultEra6Chars()
+	if err != nil {
+		return nil, err
+	}
+	e7, err := DefaultEra7Chars()
+	if err != nil {
+		return nil, err
+	}
+	return []EraConfig{e5, e6, e7}, nil
 }
 
 // Obfuscate aplica a transformação bijetora (LCG caótico Hull-Dobell se Increment > 0, ou Fibonacci Hashing).
@@ -113,12 +154,12 @@ type IDGenerator struct {
 	batchSize uint64
 	batch     []uint64
 	batchIdx  int
-	era       EraConfig
+	eras      []EraConfig
 	encoder   *Base62Encoder
 	storage   CheckpointStorage
 }
 
-// NewIDGenerator instancia o gerador com alocação em bloco e aleatorização intralote
+// NewIDGenerator instancia o gerador com uma única Era, alocação em bloco e aleatorização intralote.
 func NewIDGenerator(
 	rdb *redis.Client,
 	redisKey string,
@@ -127,26 +168,46 @@ func NewIDGenerator(
 	encoder *Base62Encoder,
 	storage CheckpointStorage,
 ) (*IDGenerator, error) {
+	return NewMultiEraIDGenerator(rdb, redisKey, batchSize, []EraConfig{era}, encoder, storage)
+}
+
+// NewMultiEraIDGenerator instancia o gerador com progressão automática entre múltiplas Eras (ex: 5 → 6 → 7).
+func NewMultiEraIDGenerator(
+	rdb *redis.Client,
+	redisKey string,
+	batchSize uint64,
+	eras []EraConfig,
+	encoder *Base62Encoder,
+	storage CheckpointStorage,
+) (*IDGenerator, error) {
 	if rdb == nil {
 		return nil, errors.New("cliente redis não pode ser nulo")
+	}
+	if len(eras) == 0 {
+		return nil, errors.New("ao menos uma era deve ser configurada")
 	}
 	if batchSize == 0 {
 		batchSize = 1000
 	}
-	if era.Increment > 0 {
-		if !IsHullDobellValid(era.Multiplier, era.Increment, era.EraSize) {
-			return nil, errors.New("as constantes da era não satisfazem o Teorema de Hull-Dobell")
+	for _, era := range eras {
+		if era.Increment > 0 {
+			if !IsHullDobellValid(era.Multiplier, era.Increment, era.EraSize) {
+				return nil, errors.New("as constantes da era não satisfazem o Teorema de Hull-Dobell")
+			}
+		} else if !IsCoprime(era.Multiplier, era.EraSize) {
+			return nil, errors.New("o multiplicador e o tamanho da era devem ser coprimos")
 		}
-	} else if !IsCoprime(era.Multiplier, era.EraSize) {
-		return nil, errors.New("o multiplicador e o tamanho da era devem ser coprimos")
 	}
+
+	erasCopy := make([]EraConfig, len(eras))
+	copy(erasCopy, eras)
 
 	return &IDGenerator{
 		redis:     rdb,
 		redisKey:  redisKey,
 		batchSize: batchSize,
 		batch:     make([]uint64, 0, batchSize),
-		era:       era,
+		eras:      erasCopy,
 		encoder:   encoder,
 		storage:   storage,
 	}, nil
@@ -232,9 +293,31 @@ func (g *IDGenerator) NextID(ctx context.Context) (string, error) {
 	seqID := g.batch[g.batchIdx]
 	g.batchIdx++
 
-	// Ofusca o ID com a transformação caótica (Hull-Dobell LCG)
-	obfuscatedID := g.era.Obfuscate(seqID)
+	return g.encodeSeqID(seqID), nil
+}
 
-	// Codifica em Base62
-	return g.encoder.Encode(obfuscatedID), nil
+// encodeSeqID resolve a Era correspondente ao seqID (1-based), ofusca e codifica com o padding da Era.
+func (g *IDGenerator) encodeSeqID(seqID uint64) string {
+	remaining := seqID
+	if remaining > 0 {
+		remaining--
+	}
+
+	for _, era := range g.eras {
+		if remaining < era.EraSize || era.EraSize == 0 {
+			obfuscatedID := era.Obfuscate(remaining)
+			if era.CodeLength > 0 {
+				return g.encoder.EncodeWithPad(obfuscatedID, era.CodeLength)
+			}
+			return g.encoder.Encode(obfuscatedID)
+		}
+		remaining -= era.EraSize
+	}
+
+	lastEra := g.eras[len(g.eras)-1]
+	obfuscatedID := lastEra.Obfuscate(remaining)
+	if lastEra.CodeLength > 0 {
+		return g.encoder.EncodeWithPad(obfuscatedID, lastEra.CodeLength)
+	}
+	return g.encoder.Encode(obfuscatedID)
 }

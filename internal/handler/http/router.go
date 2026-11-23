@@ -46,49 +46,54 @@ func NewRouter(
 	redirectHandler *RedirectHandler,
 ) http.Handler {
 	r := chi.NewRouter()
-
-	// Middlewares essenciais
-	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
-	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
-	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"*"},
-		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
-		ExposedHeaders:   []string{"Link"},
-		AllowCredentials: true,
-		MaxAge:           300,
-	}))
 
-	// Health check
-	r.Get("/healthz", healthzHandler(instanceID))
+	// Hot Path: redirecionamento 302 com overhead mínimo (sem Logger síncrono nem CORS)
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.RealIP)
+		r.Get("/r/{code}", redirectHandler.HandleRedirect)
+	})
 
-	// Documentação Swagger
-	r.Get("/swagger/*", httpSwagger.WrapHandler)
+	// Demais rotas com middlewares completos
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.RequestID)
+		r.Use(middleware.RealIP)
+		r.Use(middleware.Logger)
+		r.Use(cors.Handler(cors.Options{
+			AllowedOrigins:   []string{"*"},
+			AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+			AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
+			ExposedHeaders:   []string{"Link"},
+			AllowCredentials: true,
+			MaxAge:           300,
+		}))
 
-	// Redirecionamento 302 direto
-	r.Get("/r/{code}", redirectHandler.HandleRedirect)
+		// Health check
+		r.Get("/healthz", healthzHandler(instanceID))
 
-	// API v1
-	r.Route("/api/v1", func(r chi.Router) {
-		// Rotas de Autenticação
-		r.Route("/auth", func(r chi.Router) {
-			r.Post("/register", authHandler.Register)
-			r.Post("/login", authHandler.Login)
-			r.With(AuthRequiredMiddleware(authService)).Delete("/account", authHandler.DeleteAccount)
-		})
+		// Documentação Swagger
+		r.Get("/swagger/*", httpSwagger.WrapHandler)
 
-		// Rotas de Links
-		r.Route("/links", func(r chi.Router) {
-			// Criação aceita usuário anônimo ou autenticado
-			r.With(OptionalAuthMiddleware(authService)).Post("/", linkHandler.Create)
+		// API v1
+		r.Route("/api/v1", func(r chi.Router) {
+			// Rotas de Autenticação
+			r.Route("/auth", func(r chi.Router) {
+				r.Post("/register", authHandler.Register)
+				r.Post("/login", authHandler.Login)
+				r.With(AuthRequiredMiddleware(authService)).Delete("/account", authHandler.DeleteAccount)
+			})
 
-			// Rotas autenticadas
-			r.Group(func(r chi.Router) {
-				r.Use(AuthRequiredMiddleware(authService))
-				r.Get("/", linkHandler.ListMyLinks)
-				r.Put("/{code}", linkHandler.Edit)
+			// Rotas de Links
+			r.Route("/links", func(r chi.Router) {
+				// Criação aceita usuário anônimo ou autenticado
+				r.With(OptionalAuthMiddleware(authService)).Post("/", linkHandler.Create)
+
+				// Rotas autenticadas
+				r.Group(func(r chi.Router) {
+					r.Use(AuthRequiredMiddleware(authService))
+					r.Get("/", linkHandler.ListMyLinks)
+					r.Put("/{code}", linkHandler.Edit)
+				})
 			})
 		})
 	})

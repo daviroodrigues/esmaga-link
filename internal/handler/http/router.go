@@ -21,6 +21,16 @@ type HealthResponse struct {
 	Instance string `json:"instance" example:"api-1"`
 }
 
+func writeJSON(w http.ResponseWriter, status int, payload any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func writeJSONError(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, ErrorResponse{Error: msg})
+}
+
 // healthzHandler godoc
 // @Summary		Health check da API
 // @Description	Retorna o status da instância da API
@@ -44,6 +54,7 @@ func NewRouter(
 	authHandler *AuthHandler,
 	linkHandler *LinkHandler,
 	redirectHandler *RedirectHandler,
+	rateLimiter *RateLimiter,
 ) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Recoverer)
@@ -78,20 +89,32 @@ func NewRouter(
 		r.Route("/api/v1", func(r chi.Router) {
 			// Rotas de Autenticação
 			r.Route("/auth", func(r chi.Router) {
-				r.Post("/register", authHandler.Register)
-				r.Post("/login", authHandler.Login)
+				r.Group(func(r chi.Router) {
+					if rateLimiter != nil {
+						r.Use(rateLimiter.Limit("auth", 20, 60e9))
+					}
+					r.Post("/register", authHandler.Register)
+					r.Post("/login", authHandler.Login)
+				})
 				r.With(AuthRequiredMiddleware(authService)).Delete("/account", authHandler.DeleteAccount)
 			})
 
 			// Rotas de Links
 			r.Route("/links", func(r chi.Router) {
 				// Criação aceita usuário anônimo ou autenticado
-				r.With(OptionalAuthMiddleware(authService)).Post("/", linkHandler.Create)
+				r.Group(func(r chi.Router) {
+					r.Use(OptionalAuthMiddleware(authService))
+					if rateLimiter != nil {
+						r.Use(rateLimiter.Limit("create_link", 30, 60e9))
+					}
+					r.Post("/", linkHandler.Create)
+				})
 
 				// Rotas autenticadas
 				r.Group(func(r chi.Router) {
 					r.Use(AuthRequiredMiddleware(authService))
 					r.Get("/", linkHandler.ListMyLinks)
+					r.Get("/{code}/stats", linkHandler.GetStats)
 					r.Put("/{code}", linkHandler.Edit)
 				})
 			})

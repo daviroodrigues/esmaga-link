@@ -2,7 +2,9 @@ package http
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/daviroodrigues/esmaga-api/internal/domain"
 	"github.com/daviroodrigues/esmaga-api/internal/service"
@@ -38,7 +40,7 @@ type EditLinkResponse struct {
 func (h *LinkHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req domain.CreateLinkRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.OriginalURL == "" {
-		http.Error(w, `{"error": "campo original_url é obrigatório"}`, http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "campo original_url é obrigatório")
 		return
 	}
 
@@ -49,13 +51,11 @@ func (h *LinkHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	link, err := h.linkService.CreateLink(r.Context(), req.OriginalURL, userID)
 	if err != nil {
-		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(link)
+	writeJSON(w, http.StatusCreated, link)
 }
 
 // Edit godoc
@@ -77,40 +77,39 @@ func (h *LinkHandler) Create(w http.ResponseWriter, r *http.Request) {
 func (h *LinkHandler) Edit(w http.ResponseWriter, r *http.Request) {
 	claims, ok := r.Context().Value(UserClaimsKey).(*service.TokenClaims)
 	if !ok || claims == nil {
-		http.Error(w, `{"error": "não autorizado"}`, http.StatusUnauthorized)
+		writeJSONError(w, http.StatusUnauthorized, "não autorizado")
 		return
 	}
 
 	code := chi.URLParam(r, "code")
 	if code == "" {
-		http.Error(w, `{"error": "código do link não informado"}`, http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "código do link não informado")
 		return
 	}
 
 	var req domain.EditLinkRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.OriginalURL == "" {
-		http.Error(w, `{"error": "campo original_url é obrigatório"}`, http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "campo original_url é obrigatório")
 		return
 	}
 
 	if err := h.linkService.EditLink(r.Context(), code, claims.UserID, req.OriginalURL); err != nil {
 		status := http.StatusBadRequest
-		if err == service.ErrUnauthorizedLink {
+		if errors.Is(err, service.ErrUnauthorizedLink) {
 			status = http.StatusForbidden
-		} else if err == service.ErrLinkImmutable {
+		} else if errors.Is(err, service.ErrLinkImmutable) {
 			status = http.StatusConflict
-		} else if err == service.ErrLinkNotFound {
+		} else if errors.Is(err, service.ErrLinkNotFound) {
 			status = http.StatusNotFound
 		}
-		http.Error(w, `{"error": "`+err.Error()+`"}`, status)
+		writeJSONError(w, status, err.Error())
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{
-		"message":      "link atualizado com sucesso",
-		"short_code":   code,
-		"original_url": req.OriginalURL,
+	writeJSON(w, http.StatusOK, EditLinkResponse{
+		Message:     "link atualizado com sucesso",
+		ShortCode:   code,
+		OriginalURL: req.OriginalURL,
 	})
 }
 
@@ -127,13 +126,13 @@ func (h *LinkHandler) Edit(w http.ResponseWriter, r *http.Request) {
 func (h *LinkHandler) ListMyLinks(w http.ResponseWriter, r *http.Request) {
 	claims, ok := r.Context().Value(UserClaimsKey).(*service.TokenClaims)
 	if !ok || claims == nil {
-		http.Error(w, `{"error": "não autorizado"}`, http.StatusUnauthorized)
+		writeJSONError(w, http.StatusUnauthorized, "não autorizado")
 		return
 	}
 
 	links, err := h.linkService.ListUserLinks(r.Context(), claims.UserID)
 	if err != nil {
-		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -141,6 +140,58 @@ func (h *LinkHandler) ListMyLinks(w http.ResponseWriter, r *http.Request) {
 		links = []*domain.Link{}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(links)
+	writeJSON(w, http.StatusOK, links)
+}
+
+// GetStats godoc
+// @Summary		Estatísticas de cliques de um link
+// @Description	Retorna métricas agregadas de cliques (por data, dispositivo, país e referrer) de um link do usuário autenticado
+// @Tags			Links
+// @Produce		json
+// @Security		BearerAuth
+// @Param			code	path		string	true	"Código curto do link"
+// @Param			days	query		int		false	"Quantidade de dias para agregação (1 a 90, padrão 7)"
+// @Success		200		{object}	domain.LinkAnalytics
+// @Failure		400		{object}	ErrorResponse
+// @Failure		401		{object}	ErrorResponse
+// @Failure		403		{object}	ErrorResponse
+// @Failure		404		{object}	ErrorResponse
+// @Failure		500		{object}	ErrorResponse
+// @Router			/api/v1/links/{code}/stats [get]
+func (h *LinkHandler) GetStats(w http.ResponseWriter, r *http.Request) {
+	claims, ok := r.Context().Value(UserClaimsKey).(*service.TokenClaims)
+	if !ok || claims == nil {
+		writeJSONError(w, http.StatusUnauthorized, "não autorizado")
+		return
+	}
+
+	code := chi.URLParam(r, "code")
+	if code == "" {
+		writeJSONError(w, http.StatusBadRequest, "código do link não informado")
+		return
+	}
+
+	days := 7
+	if rawDays := r.URL.Query().Get("days"); rawDays != "" {
+		parsedDays, err := strconv.Atoi(rawDays)
+		if err != nil || parsedDays < 1 || parsedDays > 90 {
+			writeJSONError(w, http.StatusBadRequest, "parâmetro days deve ser um inteiro entre 1 e 90")
+			return
+		}
+		days = parsedDays
+	}
+
+	stats, err := h.linkService.GetLinkAnalytics(r.Context(), code, claims.UserID, days)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, service.ErrLinkNotFound) {
+			status = http.StatusNotFound
+		} else if errors.Is(err, service.ErrUnauthorizedLink) {
+			status = http.StatusForbidden
+		}
+		writeJSONError(w, status, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, stats)
 }

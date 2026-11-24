@@ -44,19 +44,17 @@ type DeleteAccountResponse struct {
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	var req AuthRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Email == "" || len(req.Password) < 6 {
-		http.Error(w, `{"error": "dados inválidos, senha deve ter ao menos 6 caracteres"}`, http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "dados inválidos, senha deve ter ao menos 6 caracteres")
 		return
 	}
 
 	user, err := h.authService.Register(r.Context(), req.Email, req.Password)
 	if err != nil {
-		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(user)
+	writeJSON(w, http.StatusCreated, user)
 }
 
 // Login godoc
@@ -73,18 +71,17 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var req AuthRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error": "requisição malformatada"}`, http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "requisição malformatada")
 		return
 	}
 
 	token, err := h.authService.Login(r.Context(), req.Email, req.Password)
 	if err != nil {
-		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusUnauthorized)
+		writeJSONError(w, http.StatusUnauthorized, err.Error())
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{"token": token})
+	writeJSON(w, http.StatusOK, LoginResponse{Token: token})
 }
 
 // DeleteAccount godoc
@@ -102,7 +99,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) DeleteAccount(w http.ResponseWriter, r *http.Request) {
 	claims, ok := r.Context().Value(UserClaimsKey).(*service.TokenClaims)
 	if !ok || claims == nil {
-		http.Error(w, `{"error": "não autorizado"}`, http.StatusUnauthorized)
+		writeJSONError(w, http.StatusUnauthorized, "não autorizado")
 		return
 	}
 
@@ -112,13 +109,12 @@ func (h *AuthHandler) DeleteAccount(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewDecoder(r.Body).Decode(&req)
 
 	if err := h.linkService.DeleteAccount(r.Context(), claims.UserID, req.KeepLinksActive); err != nil {
-		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"message":           "conta excluída com sucesso",
-		"keep_links_active": req.KeepLinksActive,
+	writeJSON(w, http.StatusOK, DeleteAccountResponse{
+		Message:         "conta excluída com sucesso",
+		KeepLinksActive: req.KeepLinksActive,
 	})
 }

@@ -1,0 +1,187 @@
+import { createLink } from './api.js';
+import { downloadQRCodePNG, renderQRCode } from './qrcode.js';
+import {
+  buildShortUrl,
+  clearElement,
+  createSafeAnchor,
+  el,
+  formatDate,
+  initThemeToggle,
+  isSafeHttpUrl,
+  showToast,
+} from './security.js';
+
+const HISTORY_KEY = 'esmaga_recent_links';
+const MAX_HISTORY = 5;
+
+const themeBtn = document.getElementById('theme-toggle');
+const form = document.getElementById('shorten-form');
+const urlInput = document.getElementById('url-input');
+const shortenBtn = document.getElementById('shorten-btn');
+const errorBox = document.getElementById('home-error');
+
+const resultCard = document.getElementById('result-card');
+const resultLinkSlot = document.getElementById('result-link-slot');
+const resultOriginal = document.getElementById('result-original');
+const copyResultBtn = document.getElementById('copy-result-btn');
+const qrCanvas = document.getElementById('result-qr-canvas');
+const downloadQrBtn = document.getElementById('download-qr-btn');
+
+const historySection = document.getElementById('history-section');
+const historyTbody = document.getElementById('history-tbody');
+const clearHistoryBtn = document.getElementById('clear-history-btn');
+const toastEl = document.getElementById('toast');
+
+let lastShortUrl = '';
+let lastShortCode = '';
+
+initThemeToggle(themeBtn);
+
+function setError(message) {
+  if (!message) {
+    errorBox.hidden = true;
+    errorBox.textContent = '';
+    return;
+  }
+  errorBox.textContent = message;
+  errorBox.hidden = false;
+}
+
+function loadHistory() {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (item) =>
+        item &&
+        typeof item.short_code === 'string' &&
+        item.short_code.length > 0 &&
+        isSafeHttpUrl(item.original_url)
+    );
+  } catch {
+    return [];
+  }
+}
+
+function saveToHistory(link) {
+  if (!link || !link.short_code || !isSafeHttpUrl(link.original_url)) return;
+  const current = loadHistory().filter((item) => item.short_code !== link.short_code);
+  const next = [
+    {
+      short_code: link.short_code,
+      original_url: link.original_url,
+      created_at: link.created_at || new Date().toISOString(),
+    },
+    ...current,
+  ].slice(0, MAX_HISTORY);
+
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+  } catch {
+    // Ignora falha de quota
+  }
+}
+
+async function copyToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast(toastEl, 'Link copiado para a área de transferência.');
+  } catch {
+    showToast(toastEl, 'Não foi possível copiar automaticamente.');
+  }
+}
+
+function renderHistory() {
+  const items = loadHistory();
+  clearElement(historyTbody);
+
+  if (items.length === 0) {
+    historySection.hidden = true;
+    return;
+  }
+
+  historySection.hidden = false;
+
+  for (const item of items) {
+    const shortUrl = buildShortUrl(item.short_code);
+    const tr = el(
+      'tr',
+      {},
+      el('td', {}, createSafeAnchor(shortUrl, shortUrl)),
+      el('td', { className: 'url-cell', title: item.original_url }, createSafeAnchor(item.original_url, item.original_url)),
+      el('td', { text: formatDate(item.created_at) }),
+      el(
+        'td',
+        { className: 'actions-cell' },
+        el('button', {
+          type: 'button',
+          className: 'btn btn-secondary btn-sm',
+          text: 'Copiar',
+          onClick: () => copyToClipboard(shortUrl),
+        })
+      )
+    );
+    historyTbody.appendChild(tr);
+  }
+}
+
+async function showResult(link) {
+  lastShortCode = link.short_code;
+  lastShortUrl = buildShortUrl(link.short_code);
+
+  clearElement(resultLinkSlot);
+  resultLinkSlot.appendChild(createSafeAnchor(lastShortUrl, lastShortUrl));
+  resultOriginal.textContent = `Destino: ${link.original_url}`;
+  resultCard.hidden = false;
+
+  await renderQRCode(qrCanvas, lastShortUrl, 180);
+}
+
+form.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  setError('');
+
+  const rawUrl = urlInput.value.trim();
+  if (!isSafeHttpUrl(rawUrl)) {
+    setError('Informe uma URL válida iniciando com http:// ou https://');
+    return;
+  }
+
+  shortenBtn.disabled = true;
+  shortenBtn.textContent = 'Encurtando...';
+
+  try {
+    const link = await createLink(rawUrl);
+    await showResult(link);
+    saveToHistory(link);
+    renderHistory();
+    urlInput.value = '';
+  } catch (err) {
+    setError(err.message || 'Erro ao encurtar URL.');
+  } finally {
+    shortenBtn.disabled = false;
+    shortenBtn.textContent = 'Esmagar';
+  }
+});
+
+copyResultBtn.addEventListener('click', () => {
+  if (lastShortUrl) {
+    copyToClipboard(lastShortUrl);
+  }
+});
+
+downloadQrBtn.addEventListener('click', () => {
+  if (lastShortCode) {
+    downloadQRCodePNG(qrCanvas, lastShortCode);
+  }
+});
+
+clearHistoryBtn.addEventListener('click', () => {
+  localStorage.removeItem(HISTORY_KEY);
+  renderHistory();
+  showToast(toastEl, 'Histórico local limpo.');
+});
+
+renderHistory();

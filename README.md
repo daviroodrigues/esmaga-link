@@ -150,33 +150,34 @@ Como $x_1, x_2 \in [0, M-1]$, segue que $\vert{}x_1 - x_2\vert{} < M$. O único 
 
 A topologia aplica **CQRS** (*Command and Query Responsibility Segregation*) para isolar completamente o caminho crítico de redirecionamento HTTP (*Hot Path*) do pipeline assíncrono de telemetria (*Cold Path*).
 
-```text
-                              [ Cliente / User-Agent ]
-                                         │
-                                         │ HTTP/1.1 Keep-Alive
-                                         ▼
-                              [ Nginx Reverse Proxy ]
-                            (Única porta exposta · :8090)
-                                         │
-                                         ▼
-                                    [ Go API ]
-                              (Stateless · chi · atomic)
-                   ┌────────────┬────────┴────────┬────────────┐
-          (Lease)  │     (Auth) │                 │            │ (Eventos)
-                   ▼            ▼                 ▼            ▼
-              [ Redis 7 ] [ PostgreSQL 16 ] [ Cassandra 4.1 ] [ RabbitMQ 3 ]
-              • Cache L2  • Contas (ACID)   • O(1) Lookup     • Backpressure
-              • ID Batch  • RBAC & JWT      • links_by_code   • clicks.topic
-                   │                                           │
-                   └─────────────────────────┐                 │
-                                             ▼                 ▼
-                                      [ Go Analytics Worker ]
-                                      (Ingestão em Micro-lotes)
-                                                 │
-                                                 ▼
-                                      [ Apache Cassandra 4.1 ]
-                                      • Séries Temporais (TWCS)
-                                      • click_events
+```mermaid
+flowchart TD
+    subgraph External["Clientes e Destinos"]
+        Clients["Clientes / User-Agents"]
+        Targets["URLs de Destino (302)"]
+    end
+
+    subgraph Network["Rede Docker Compose"]
+        Nginx["esmaga-nginx\n(Única porta exposta: ${HOST_NGINX_PORT:-8090}:80)"]
+        API["esmaga-api\n(Go + chi + Cache L1 + Eras 5→6→7)"]
+        Redis[("Redis 7\nCache L2 + Batch Leasing")]
+        Postgres[("PostgreSQL 16\nContas, RBAC & JWT")]
+        Cassandra[("Apache Cassandra 4.1\nlinks_by_code + click_events")]
+        RabbitMQ[("RabbitMQ 3\nclicks.topic")]
+        Worker["esmaga-worker\n(Ingestão em Micro-lotes)"]
+    end
+
+    Clients -->|"HTTP/1.1 Keep-Alive"| Nginx
+    Nginx -->|"/r/{code}, /api/v1, /swagger, /healthz"| API
+    API -.->|"302 Found (Location)"| Targets
+
+    API -->|"L2 Cache & ID Batch"| Redis
+    API -->|"Auth & Contas (ACID)"| Postgres
+    API -->|"SSOT (O(1) Lookup & Checkpoints)"| Cassandra
+    API -->|"Canal Bufferizado (Async)"| RabbitMQ
+
+    RabbitMQ -->|"Consumo"| Worker
+    Worker -->|"Séries Temporais (TWCS)"| Cassandra
 ```
 
 **Pilares da topologia:**

@@ -29,6 +29,33 @@ definitions:
       user_id:
         type: string
     type: object
+  domain.LinkAnalytics:
+    properties:
+      clicks_by_country:
+        additionalProperties:
+          format: int64
+          type: integer
+        type: object
+      clicks_by_date:
+        additionalProperties:
+          format: int64
+          type: integer
+        type: object
+      clicks_by_device:
+        additionalProperties:
+          format: int64
+          type: integer
+        type: object
+      short_code:
+        type: string
+      top_referrers:
+        additionalProperties:
+          format: int64
+          type: integer
+        type: object
+      total_clicks:
+        type: integer
+    type: object
   domain.User:
     properties:
       created_at:
@@ -288,6 +315,52 @@ paths:
       security:
       - BearerAuth: []
       summary: Editar URL de destino de um link
+      tags:
+      - Links
+  /api/v1/links/{code}/stats:
+    get:
+      description: Retorna métricas agregadas de cliques (por data, dispositivo, país
+        e referrer) de um link do usuário autenticado
+      parameters:
+      - description: Código curto do link
+        in: path
+        name: code
+        required: true
+        type: string
+      - description: Quantidade de dias para agregação (1 a 90, padrão 7)
+        in: query
+        name: days
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.LinkAnalytics'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Estatísticas de cliques de um link
       tags:
       - Links
   /healthz:

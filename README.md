@@ -119,7 +119,7 @@ $$(P \cdot P^{-1}) \equiv 1 \pmod M$$
 
 Com $P^{-1}$ pré-computado **uma única vez na inicialização da aplicação**, qualquer código é revertido ao seu ID sequencial original em sub-microssegundos:
 
-$$\text{ID}_{\text{seq}} = (\text{ID}_{\text{obfuscated\_decimal}} \cdot P^{-1}) \pmod M$$
+$$\text{ID}_{\text{seq}} = (\text{ID}_{\text{ofuscado}} \cdot P^{-1}) \pmod M$$
 
 ### 1.6. Prova formal de ausência de colisões
 
@@ -167,9 +167,9 @@ flowchart TD
         Worker["esmaga-worker\n(Ingestão em Micro-lotes)"]
     end
 
-    Clients -->|"HTTP/1.1 Keep-Alive"| Nginx
-    Nginx -->|"/r/{code}, /api/v1, /swagger, /healthz"| API
-    API -.->|"302 Found (Location)"| Targets
+    Clients <-->|"HTTP/1.1 Keep-Alive"| Nginx
+    Nginx <-->|"/r/{code}, /api/v1, /swagger, /healthz"| API
+    Clients -.->|"Segue 302 (Location)"| Targets
 
     API -->|"L2 Cache & ID Batch"| Redis
     API -->|"Auth & Contas (ACID)"| Postgres

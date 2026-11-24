@@ -12,7 +12,7 @@
 
 At its core, it abandons random generators and database locks in favor of a **deterministic modular bijection** over a finite ring: $O(1)$ generation time, local reversibility without I/O, and **zero collisions by algebraic construction**.
 
-![Demonstration: coprime mapping over the Z_M ring with a golden-ratio-derived multiplier](docs/assets/demo_en.gif)
+![Demonstration: coprime mapping over the Z_M ring with a golden-ratio-derived multiplier](docs/assets/demo.en.gif)
 
 *Each frame illustrates a batch of IDs being consumed in an intra-batch permuted order (a mechanism deliberately applied on every instance to prevent sequential correlation), whose entropy is further amplified across multiple concurrent nodes. The yellow trail demonstrates that all 10 IDs already land dispersed across the ring prior to the first access, serving as visual proof that spatial dispersion is independent of consumption order.*
 
@@ -119,7 +119,7 @@ $$(P \cdot P^{-1}) \equiv 1 \pmod M$$
 
 With $P^{-1}$ precomputed **once at application startup**, any code is reversed back to its original sequential ID in sub-microseconds:
 
-$$\text{ID}_{\text{seq}} = (\text{ID}_{\text{obfuscated\_decimal}} \cdot P^{-1}) \pmod M$$
+$$\text{ID}_{\text{seq}} = (\text{ID}_{\text{obfuscated}} \cdot P^{-1}) \pmod M$$
 
 ### 1.6. Formal Proof of Collision Absence
 
@@ -150,33 +150,34 @@ Since $x_1, x_2 \in [0, M-1]$, it follows that $\vert{}x_1 - x_2\vert{} < M$. Th
 
 The topology applies **CQRS** (*Command and Query Responsibility Segregation*) to completely isolate the critical HTTP redirection path (*Hot Path*) from the asynchronous telemetry pipeline (*Cold Path*).
 
-```text
-                              [ Client / User-Agent ]
-                                         │
-                                         │ HTTP/1.1 Keep-Alive
-                                         ▼
-                              [ Nginx Reverse Proxy ]
-                            (Single exposed port · :8090)
-                                         │
-                                         ▼
-                                    [ Go API ]
-                              (Stateless · chi · atomic)
-                   ┌────────────┬────────┴────────┬────────────┐
-          (Lease)  │     (Auth) │                 │            │ (Events)
-                   ▼            ▼                 ▼            ▼
-              [ Redis 7 ] [ PostgreSQL 16 ] [ Cassandra 4.1 ] [ RabbitMQ 3 ]
-              • Cache L2  • Accounts (ACID) • O(1) Lookup     • Backpressure
-              • ID Batch  • RBAC & JWT      • links_by_code   • clicks.topic
-                   │                                           │
-                   └─────────────────────────┐                 │
-                                             ▼                 ▼
-                                      [ Go Analytics Worker ]
-                                      (Micro-batch Ingestion)
-                                                 │
-                                                 ▼
-                                      [ Apache Cassandra 4.1 ]
-                                      • Time Series (TWCS)
-                                      • click_events
+```mermaid
+flowchart TD
+    subgraph External["Clients & Destinations"]
+        Clients["Clients / User-Agents"]
+        Targets["Destination URLs (302)"]
+    end
+
+    subgraph Network["Docker Compose Network"]
+        Nginx["esmaga-nginx\n(Single exposed port: ${HOST_NGINX_PORT:-8090}:80)"]
+        API["esmaga-api\n(Go + chi + L1 Cache + Eras 5→6→7)"]
+        Redis[("Redis 7\nL2 Cache + Batch Leasing")]
+        Postgres[("PostgreSQL 16\nAccounts, RBAC & JWT")]
+        Cassandra[("Apache Cassandra 4.1\nlinks_by_code + click_events")]
+        RabbitMQ[("RabbitMQ 3\nclicks.topic")]
+        Worker["esmaga-worker\n(Micro-batch Ingestion)"]
+    end
+
+    Clients <-->|"HTTP/1.1 Keep-Alive"| Nginx
+    Nginx <-->|"/r/{code}, /api/v1, /swagger, /healthz"| API
+    Clients -.->|"Follows 302 (Location)"| Targets
+
+    API -->|"L2 Cache & ID Batch"| Redis
+    API -->|"Auth & Accounts (ACID)"| Postgres
+    API -->|"SSOT (O(1) Lookup & Checkpoints)"| Cassandra
+    API -->|"Buffered Channel (Async)"| RabbitMQ
+
+    RabbitMQ -->|"Consume"| Worker
+    Worker -->|"Time Series (TWCS)"| Cassandra
 ```
 
 **Architectural pillars:**

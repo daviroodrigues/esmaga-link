@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	_ "github.com/daviroodrigues/esmaga-api/docs"
+	"github.com/daviroodrigues/esmaga-api/internal/observability"
 	"github.com/daviroodrigues/esmaga-api/internal/service"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -48,8 +49,14 @@ func healthzHandler(instanceID string) http.HandlerFunc {
 	}
 }
 
+type PublicConfigResponse struct {
+	TurnstileSiteKey string `json:"turnstile_site_key" example:""`
+}
+
 func NewRouter(
 	instanceID string,
+	turnstileSiteKey string,
+	metrics *observability.Metrics,
 	authService *service.AuthService,
 	authHandler *AuthHandler,
 	linkHandler *LinkHandler,
@@ -62,14 +69,23 @@ func NewRouter(
 	// Hot Path: redirecionamento 302 com overhead mínimo (sem Logger síncrono nem CORS)
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RealIP)
-		r.Get("/r/{code}", redirectHandler.HandleRedirect)
+		r.Get("/r/{code}", func(w http.ResponseWriter, req *http.Request) {
+			if metrics != nil {
+				metrics.IncRedirect()
+			}
+			redirectHandler.HandleRedirect(w, req)
+		})
 	})
 
 	// Demais rotas com middlewares completos
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RequestID)
 		r.Use(middleware.RealIP)
-		r.Use(middleware.Logger)
+		if metrics != nil {
+			r.Use(metrics.HTTPMiddleware)
+		} else {
+			r.Use(middleware.Logger)
+		}
 		r.Use(cors.Handler(cors.Options{
 			AllowedOrigins:   []string{"*"},
 			AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
@@ -79,14 +95,23 @@ func NewRouter(
 			MaxAge:           300,
 		}))
 
-		// Health check
+		// Health check e métricas Prometheus
 		r.Get("/healthz", healthzHandler(instanceID))
+		if metrics != nil {
+			r.Get("/metrics", metrics.Handler())
+		}
 
 		// Documentação Swagger
 		r.Get("/swagger/*", httpSwagger.WrapHandler)
 
 		// API v1
 		r.Route("/api/v1", func(r chi.Router) {
+			r.Get("/config", func(w http.ResponseWriter, r *http.Request) {
+				writeJSON(w, http.StatusOK, PublicConfigResponse{
+					TurnstileSiteKey: turnstileSiteKey,
+				})
+			})
+
 			// Rotas de Autenticação
 			r.Route("/auth", func(r chi.Router) {
 				r.Group(func(r chi.Router) {
@@ -94,9 +119,25 @@ func NewRouter(
 						r.Use(rateLimiter.Limit("auth", 20, 60e9))
 					}
 					r.Post("/register", authHandler.Register)
+					r.Post("/verify-email", authHandler.VerifyEmail)
 					r.Post("/login", authHandler.Login)
+					r.Post("/refresh", authHandler.Refresh)
+					r.Post("/logout", authHandler.Logout)
+					r.Post("/forgot-password", authHandler.ForgotPassword)
+					r.Post("/reset-password", authHandler.ResetPassword)
 				})
-				r.With(AuthRequiredMiddleware(authService)).Delete("/account", authHandler.DeleteAccount)
+				r.Group(func(r chi.Router) {
+					if rateLimiter != nil {
+						r.Use(rateLimiter.Limit("resend_verification", 1, 60e9))
+					}
+					r.Post("/resend-verification", authHandler.ResendVerification)
+				})
+				r.Group(func(r chi.Router) {
+					r.Use(AuthRequiredMiddleware(authService))
+					r.Get("/me", authHandler.GetMe)
+					r.Patch("/me", authHandler.UpdateMe)
+					r.Delete("/account", authHandler.DeleteAccount)
+				})
 			})
 
 			// Rotas de Links
@@ -116,6 +157,7 @@ func NewRouter(
 					r.Get("/", linkHandler.ListMyLinks)
 					r.Get("/{code}/stats", linkHandler.GetStats)
 					r.Put("/{code}", linkHandler.Edit)
+					r.Delete("/{code}", linkHandler.Delete)
 				})
 			})
 		})

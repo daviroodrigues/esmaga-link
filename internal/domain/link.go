@@ -15,7 +15,8 @@ type Link struct {
 }
 
 type CreateLinkRequest struct {
-	OriginalURL string `json:"original_url"`
+	OriginalURL    string `json:"original_url"`
+	TurnstileToken string `json:"turnstile_token,omitempty"`
 }
 
 type EditLinkRequest struct {

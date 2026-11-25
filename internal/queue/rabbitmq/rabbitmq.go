@@ -22,6 +22,7 @@ const (
 type Publisher struct {
 	conn      *amqp.Connection
 	channel   *amqp.Channel
+	pubMu     sync.Mutex
 	events    chan *domain.ClickEvent
 	done      chan struct{}
 	closeOnce sync.Once
@@ -53,6 +54,12 @@ func NewPublisher(url string) (*Publisher, error) {
 		ch.Close()
 		conn.Close()
 		return nil, fmt.Errorf("erro ao declarar exchange: %w", err)
+	}
+
+	if err := declareNotificationsTopology(ch); err != nil {
+		ch.Close()
+		conn.Close()
+		return nil, err
 	}
 
 	p := &Publisher{
@@ -89,6 +96,9 @@ func (p *Publisher) PublishClick(ctx context.Context, event *domain.ClickEvent) 
 	if err != nil {
 		return fmt.Errorf("erro ao serializar click event: %w", err)
 	}
+
+	p.pubMu.Lock()
+	defer p.pubMu.Unlock()
 
 	return p.channel.PublishWithContext(
 		ctx,

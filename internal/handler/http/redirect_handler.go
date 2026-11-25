@@ -53,9 +53,9 @@ func (h *RedirectHandler) HandleRedirect(w http.ResponseWriter, r *http.Request)
 	}
 	h.linkService.TrackClickAsync(event)
 
-	// Resposta 302 imediata sem alocação de corpo HTML
+	// Resposta 302 imediata sem alocação de corpo HTML (sem cache no navegador para contabilizar todo clique)
 	w.Header().Set("Location", originalURL)
-	w.Header().Set("Cache-Control", "private, max-age=90")
+	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusFound)
 }
 

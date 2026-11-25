@@ -56,7 +56,7 @@ Seu núcleo abandona geradores aleatórios e travas em banco de dados em favor d
     - [6.2. Redirecionamento (Hot Path)](#62-redirecionamento-hot-path)
     - [6.3. Fluxo autenticado via cURL](#63-fluxo-autenticado-via-curl)
   - [7. Testes e Verificação](#7-testes-e-verificação)
-  - [8. Como Executar](#8-como-executar)
+  - [8. Como Executar e Operação](#8-como-executar-e-operação)
 
 ---
 
@@ -158,26 +158,27 @@ flowchart TD
     end
 
     subgraph Network["Rede Docker Compose"]
-        Nginx["esmaga-nginx\n(Única porta exposta: ${HOST_NGINX_PORT:-8090}:80)"]
+        Nginx["esmaga-nginx\n(Única porta exposta: ${HOST_NGINX_PORT}:80)"]
         API["esmaga-api\n(Go + chi + Cache L1 + Eras 5→6→7)"]
-        Redis[("Redis 7\nCache L2 + Batch Leasing")]
-        Postgres[("PostgreSQL 16\nContas, RBAC & JWT")]
+        Redis[("Redis 7\nCache L2, Pub/Sub & Batch Leasing")]
+        Postgres[("PostgreSQL 16\nContas, Tokens & Templates")]
         Cassandra[("Apache Cassandra 4.1\nlinks_by_code + click_events")]
-        RabbitMQ[("RabbitMQ 3\nclicks.topic")]
-        Worker["esmaga-worker\n(Ingestão em Micro-lotes)"]
+        RabbitMQ[("RabbitMQ 3\nclicks.topic + notifications.topic")]
+        Worker["esmaga-worker\n(Analytics + E-mail SMTP)"]
     end
 
     Clients <-->|"HTTP/1.1 Keep-Alive"| Nginx
-    Nginx <-->|"/r/{code}, /api/v1, /swagger, /healthz"| API
+    Nginx <-->|"/r/{code}, /api/v1, /swagger, /healthz, /metrics"| API
     Clients -.->|"Segue 302 (Location)"| Targets
 
-    API -->|"L2 Cache & ID Batch"| Redis
-    API -->|"Auth & Contas (ACID)"| Postgres
+    API -->|"L2 Cache, Pub/Sub & ID Batch"| Redis
+    API -->|"Auth, Contas & Tokens (ACID)"| Postgres
     API -->|"SSOT (O(1) Lookup & Checkpoints)"| Cassandra
     API -->|"Canal Bufferizado (Async)"| RabbitMQ
 
-    RabbitMQ -->|"Consumo"| Worker
+    RabbitMQ -->|"Consumo + DLQ"| Worker
     Worker -->|"Séries Temporais (TWCS)"| Cassandra
+    Worker -->|"Templates Seed & Leitura"| Postgres
 ```
 
 **Pilares da topologia:**
@@ -194,10 +195,10 @@ A persistência segue o modelo **poliglota**, alocando cada domínio ao motor co
 
 | Componente               | Domínio                       | Justificativa Técnica                                                                                                                                                                                                       |
 | :----------------------- | :---------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Redis 7**              | Cache L2 e Batch Leasing      | Operações atômicas em memória (`INCRBY`, `GET`, `SETEX`) eliminam contenção na alocação de faixas de IDs e mantêm leituras quentes em $\sim 1\text{ms}$.                                                                    |
-| **Apache Cassandra 4.1** | Catálogo de URLs e Telemetria | Arquitetura *wide-column* e *masterless*. `links_by_code` particiona por `short_code` para leitura $O(1)$; `click_events` utiliza **TWCS** (*Time-Window Compaction Strategy*) para ingestão otimizada de séries temporais. |
-| **PostgreSQL 16**        | Usuários, RBAC e Autenticação | Consistência ACID estrita. Isola verificações `bcrypt` e gestão de contas do fluxo de redirecionamento.                                                                                                                     |
-| **RabbitMQ 3**           | Barramento Analítico          | Mensageria AMQP com controle de fluxo nativo, desacoplando a resposta HTTP `302` da persistência de métricas em picos $> 50.000\text{ req/s}$.                                                                              |
+| **Redis 7**              | Cache L2, Pub/Sub e Batch Leasing | Operações atômicas em memória (`INCRBY`, `GET`, `SETEX`) eliminam contenção na alocação de faixas de IDs, mantêm leituras quentes em $\sim 1\text{ms}$ e sincronizam invalidação do cache L1 via Pub/Sub (`esmaga:cache:invalidate`). |
+| **Apache Cassandra 4.1** | Catálogo de URLs e Telemetria     | Arquitetura *wide-column* e *masterless*. `links_by_code` particiona por `short_code` para leitura $O(1)$; `click_events` utiliza **TWCS** (*Time-Window Compaction Strategy*) para ingestão otimizada de séries temporais. |
+| **PostgreSQL 16**        | Usuários, Tokens e Templates      | Consistência ACID estrita para contas, verificação de e-mail (`auth_tokens`), rotação de sessões (`refresh_tokens`) e templates transacionais (`email_templates` semeados no boot). |
+| **RabbitMQ 3**           | Barramento Analítico e E-mail     | Mensageria AMQP com `clicks.topic` para telemetria e `notifications.topic` (retry exponencial `10s / 1m / 5m` + `notifications.email.dlq`) para envio SMTP assíncrono agnóstico de provedor. |
 
 ---
 
@@ -213,10 +214,9 @@ Sistemas monolíticos degradam quando a escrita de telemetria (IP, *User-Agent*,
 3. Em *cache miss* no Redis, consulta o Cassandra por *partition key* (`LocalOne`), popula o L1, dispara o aquecimento do Redis em *background* e responde `302 Found` apenas via headers (`Location` e `Cache-Control`) sem corpo HTTP (*zero body allocation*).
 4. Em paralelo, enfileira o evento de clique em um canal bufferizado (`4096`) consumido por goroutine dedicada para publicação no RabbitMQ de forma **não bloqueante**.
 
-**Caminho Frio (Ingestão Analítica):**
-1. *Workers* dedicados em Go consomem a fila `clicks.topic`.
-2. Os eventos são agrupados por janela temporal ou tamanho de lote (*micro-batching*).
-3. As gravações são consolidadas sequencialmente nas SSTables do Cassandra.
+**Caminho Frio (Ingestão Analítica, Notificações & Invalidação):**
+1. *Workers* dedicados em Go consomem `clicks.topic` (gravando eventos de clique no Cassandra) e `notifications.topic` (renderizando templates do PostgreSQL e disparando e-mails via SMTP com retry exponencial e DLQ).
+2. Ao editar (`PUT`) ou desativar (`DELETE`) um link, a API atualiza o Cassandra, remove a chave no Redis e publica o `short_code` no canal Pub/Sub `esmaga:cache:invalidate` para invalidar imediatamente o cache L1 de todas as réplicas.
 
 ### 4.2. Batch Leasing
 
@@ -243,24 +243,37 @@ Por ser armazenado em memória, o Redis é tratado como componente descartável.
 ## 5. Segurança de Borda
 
 - **Proteção contra SSRF:** toda URL submetida passa por *parsing* estrito e resolução DNS antes da persistência. Endereços apontando para redes privadas (RFC 1918), *loopback* (`127.0.0.0/8`, `::1`) ou endpoints de metadados de nuvem (`169.254.169.254`) são bloqueados na borda.
-- **Rate Limiting distribuído:** algoritmo *Token Bucket* executado via scripts Lua atômicos no Redis, mitigando ataques L7 DoS e *scraping* abusivo sem condições de corrida.
-- **Autenticação JWT (`HMAC-SHA256`):** rotas administrativas exigem token assinado; toda validação de credenciais ocorre no PostgreSQL, mantendo operações criptográficas lentas fora do *hot path*.
+- **Rate Limiting distribuído:** algoritmo *Token Bucket* executado via scripts Lua atômicos no Redis, mitigando ataques L7 DoS e *scraping* abusivo sem condições de corrida (incluindo limite estrito de `1 req/min` em `/resend-verification`).
+- **Autenticação JWT + Refresh Token (`HMAC-SHA256`):** *access tokens* curtos (`15min`) combinados com *refresh tokens* rotacionáveis (`30d`, hash SHA-256 em banco + cookie `HttpOnly`). Contas não verificadas não podem autenticar nem editar/desativar links.
+- **Anti-Bot (Cloudflare Turnstile):** validação opcional via `TURNSTILE_SITE_KEY`/`TURNSTILE_SECRET_KEY` no cadastro, recuperação de senha e criação anônima de links.
 
 ---
 
 ## 6. Contratos da API HTTP
 
-| Método   | Endpoint               |  Autenticação  | Descrição                                      |
-| :------- | :--------------------- | :------------: | :--------------------------------------------- |
-| `GET`    | `/swagger/index.html`  |    Pública     | Documentação interativa Swagger UI (`swaggo`)  |
-| `GET`    | `/healthz`             |    Pública     | Health check da instância da API               |
-| `POST`   | `/api/v1/auth/register`|    Pública     | Cadastra um novo usuário                       |
-| `POST`   | `/api/v1/auth/login`   |    Pública     | Autentica usuário e emite token JWT            |
-| `DELETE` | `/api/v1/auth/account` |      JWT       | Exclui a conta do usuário autenticado          |
-| `POST`   | `/api/v1/links`        | Opcional / JWT | Encurta uma nova URL e retorna o `short_code`  |
-| `GET`    | `/api/v1/links`        |      JWT       | Lista os links do usuário autenticado          |
-| `PUT`    | `/api/v1/links/{code}` |      JWT       | Atualiza a URL original de um link             |
-| `GET`    | `/r/{short_code}`      |    Pública     | Redireciona (`302 Found`) para a URL original  |
+| Método   | Endpoint                              |  Autenticação  | Descrição                                                                 |
+| :------- | :------------------------------------ | :------------: | :------------------------------------------------------------------------ |
+| `GET`    | `/swagger/index.html`                 |    Pública     | Documentação interativa Swagger UI (`swaggo`)                             |
+| `GET`    | `/healthz`                            |    Pública     | Health check da instância da API                                          |
+| `GET`    | `/metrics`                            |    Pública     | Métricas Prometheus (`text/plain; version=0.0.4`)                         |
+| `GET`    | `/api/v1/config`                      |    Pública     | Configurações públicas de borda (`turnstile_site_key`)                    |
+| `POST`   | `/api/v1/auth/register`               |    Pública     | Cadastra conta `pending` e enfileira e-mail de verificação                |
+| `POST`   | `/api/v1/auth/verify-email`           |    Pública     | Valida token de uso único (24h) e ativa a conta                           |
+| `POST`   | `/api/v1/auth/resend-verification`    |    Pública     | Reenvia e-mail de confirmação (rate limit `1 req/min`)                    |
+| `POST`   | `/api/v1/auth/login`                  |    Pública     | Autentica usuário verificado e emite `access_token` + `refresh_token`     |
+| `POST`   | `/api/v1/auth/refresh`                |    Pública     | Rotaciona o par `access_token` / `refresh_token`                          |
+| `POST`   | `/api/v1/auth/logout`                 |    Pública     | Revoga o `refresh_token` atual e limpa o cookie                           |
+| `POST`   | `/api/v1/auth/forgot-password`        |    Pública     | Sempre retorna `200 OK`; se o e-mail existir, envia token de reset (30m)  |
+| `POST`   | `/api/v1/auth/reset-password`         |    Pública     | Atualiza senha via token e revoga todos os `refresh_tokens` ativos        |
+| `GET`    | `/api/v1/auth/me`                     |      JWT       | Retorna perfil da conta autenticada                                       |
+| `PATCH`  | `/api/v1/auth/me`                     |      JWT       | Atualiza nome e/ou senha (exigindo `current_password`)                    |
+| `DELETE` | `/api/v1/auth/account`                |      JWT       | Exclui a conta (opção `keep_links_active`) e notifica por e-mail          |
+| `POST`   | `/api/v1/links`                       | Opcional / JWT | Encurta uma nova URL e retorna o `short_code`                             |
+| `GET`    | `/api/v1/links`                       |      JWT       | Lista os links do usuário autenticado                                     |
+| `GET`    | `/api/v1/links/{code}/stats`          |      JWT       | Retorna analytics agregados (`days` de `1` a `90`)                        |
+| `PUT`    | `/api/v1/links/{code}`                |      JWT       | Atualiza a URL original de um link e invalida L1/L2                       |
+| `DELETE` | `/api/v1/links/{code}`                |      JWT       | Desativa o link (`is_active = false`) e invalida L1/L2                    |
+| `GET`    | `/r/{short_code}`                     |    Pública     | Redireciona (`302 Found`) para a URL original                             |
 
 ### 6.1. Criação de shortcodes
 
@@ -271,7 +284,7 @@ Content-Type: application/json
 
 ```json
 {
-  "original_url": "[https://www.dominio-longo-exemplo.com/artigo-tecnico](https://www.dominio-longo-exemplo.com/artigo-tecnico)"
+  "original_url": "https://www.dominio-longo-exemplo.com/artigo-tecnico"
 }
 ```
 
@@ -296,23 +309,23 @@ GET /r/{short_code}
 
 ```http
 HTTP/1.1 302 Found
-Location: [https://www.dominio-longo-exemplo.com/artigo-tecnico](https://www.dominio-longo-exemplo.com/artigo-tecnico)
+Location: https://www.dominio-longo-exemplo.com/artigo-tecnico
 Cache-Control: private, max-age=90
 ```
 
 ### 6.3. Fluxo autenticado via cURL
 
 ```bash
-# 1. Obter JWT
-JWT_TOKEN=$(curl -s -X POST http://localhost:8090/api/v1/auth/login \
+# 1. Obter access_token (após confirmar e-mail)
+JWT_TOKEN=$(curl -s -X POST http://localhost/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"admin@empresa.com","password":"StrongPassword123!"}' | jq -r '.token')
+  -d '{"email":"admin@empresa.com","password":"StrongPassword123!"}' | jq -r '.access_token')
 
 # 2. Criar link autenticado
-curl -s -X POST http://localhost:8090/api/v1/links \
+curl -s -X POST http://localhost/api/v1/links \
   -H "Authorization: Bearer $JWT_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"original_url":"[https://empresa.com/campanha-v1](https://empresa.com/campanha-v1)"}'
+  -d '{"original_url":"https://empresa.com/campanha-v1"}'
 ```
 
 ---
@@ -331,26 +344,30 @@ go test -v ./... -coverprofile=coverage.out
 
 ---
 
-## 8. Como Executar
+## 8. Como Executar e Operação
 
 **Pré-requisitos:** Docker Engine 24.0+ e Docker Compose v2.20+ (Go 1.25+ opcional para execução local dos testes).
 
 ```bash
-# 1. Configurar variáveis de ambiente
+# 1. Configurar variáveis de ambiente (todas as variáveis do Compose vêm do .env)
 cp .env.example .env
+# Edite o .env preenchendo JWT_SECRET, ALPHABET_SEED e as credenciais SMTP (SMTP_HOST/PORT/FROM)
 
 # 2. Subir toda a stack a partir da raiz (Nginx, Go API, Cassandra, Redis, PostgreSQL, RabbitMQ e Worker)
 docker compose up -d --build
 ```
 
-Apenas o **Nginx** fica exposto para o host (porta padrão `8090`, configurável via `HOST_NGINX_PORT`). Os *entrypoints* executam de forma idempotente as migrações DDL no PostgreSQL, a criação dos *keyspaces*/tabelas no Cassandra e a inicialização dos consumidores analíticos.
+Apenas o **Nginx** fica exposto para o host (porta configurada em `HOST_NGINX_PORT`). Os *entrypoints* inicializam o schema DDL no PostgreSQL, criam os *keyspaces*/tabelas no Cassandra (`cassandra-init`), semeiam os templates de e-mail padrão no boot do `worker` e sobem os consumidores de analytics e notificações.
 
-- **Swagger UI:** `http://localhost:8090/swagger/index.html`
+- **Swagger UI:** `http://localhost/swagger/index.html`
+- **Métricas Prometheus:** `http://localhost/metrics`
+- **Logs estruturados:** saída colorida no estilo *zerolog* (`log/slog`) com `request_id`, `service` e `instance`.
+- **Backup automatizado:** execute [deployments/scripts/backup.sh](deployments/scripts/backup.sh) via `cron` para `pg_dump` compactado (retenção configurável via `BACKUP_RETENTION_DAYS`) e `nodetool snapshot` no Cassandra.
 
 **Verificação rápida:**
 
 ```bash
-curl -i -X POST http://localhost:8090/api/v1/links \
+curl -i -X POST http://localhost/api/v1/links \
   -H "Content-Type: application/json" \
   -d '{"original_url":"https://github.com"}'
 ```

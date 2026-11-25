@@ -17,21 +17,39 @@ type Config struct {
 	JWTSecret       string
 	AlphabetSeed    string
 	IDBatchSize     uint64
+	AppBaseURL      string
+	SMTPHost        string
+	SMTPPort        string
+	SMTPUser        string
+	SMTPPass        string
+	SMTPFrom          string
+	SMTPTLS           string
+	TurnstileSiteKey  string
+	TurnstileSecretKey string
 }
 
 func Load() *Config {
 	return &Config{
-		Port:              getEnv("PORT", "8080"),
-		InstanceID:        getEnv("INSTANCE_ID", "api-local"),
-		PostgresURL:       getEnv("POSTGRES_URL", "postgres://esmaga_user:esmaga_secret@localhost:5432/esmaga_auth?sslmode=disable"),
-		CassandraHosts:    getEnv("CASSANDRA_HOSTS", "127.0.0.1"),
-		CassandraKeyspace: getEnv("CASSANDRA_KEYSPACE", "esmaga_link"),
-		RedisAddr:         getEnv("REDIS_ADDR", "127.0.0.1:6379"),
-		RedisPassword:     getEnv("REDIS_PASSWORD", ""),
-		RabbitMQURL:       getEnv("RABBITMQ_URL", "amqp://guest:guest@127.0.0.1:5672/"),
-		JWTSecret:         getEnv("JWT_SECRET", "super-secret-default-key-change-in-production"),
-		AlphabetSeed:      getEnv("ALPHABET_SEED", "esmaga-seed-2026"),
-		IDBatchSize:       getEnvAsUint64("ID_BATCH_SIZE", 1000),
+		Port:               getEnv("PORT", "8080"),
+		InstanceID:         getEnv("INSTANCE_ID", "api-local"),
+		PostgresURL:        getEnv("POSTGRES_URL", "postgres://esmaga_user:esmaga_secret@localhost:5432/esmaga_auth?sslmode=disable"),
+		CassandraHosts:     getEnv("CASSANDRA_HOSTS", "127.0.0.1"),
+		CassandraKeyspace:  getEnv("CASSANDRA_KEYSPACE", "esmaga_link"),
+		RedisAddr:          getEnv("REDIS_ADDR", "127.0.0.1:6379"),
+		RedisPassword:      getEnv("REDIS_PASSWORD", ""),
+		RabbitMQURL:        getEnv("RABBITMQ_URL", "amqp://guest:guest@127.0.0.1:5672/"),
+		JWTSecret:          getEnv("JWT_SECRET", "super-secret-default-key-change-in-production"),
+		AlphabetSeed:       getEnv("ALPHABET_SEED", "esmaga-seed-2026"),
+		IDBatchSize:        getEnvAsUint64("ID_BATCH_SIZE", 1000),
+		AppBaseURL:         getEnv("APP_BASE_URL", "http://localhost:8080"),
+		SMTPHost:           getEnv("SMTP_HOST", ""),
+		SMTPPort:           getEnv("SMTP_PORT", "587"),
+		SMTPUser:           getEnv("SMTP_USER", ""),
+		SMTPPass:           getEnv("SMTP_PASS", ""),
+		SMTPFrom:           getEnv("SMTP_FROM", "Esmaga Link <noreply@esmagalink.local>"),
+		SMTPTLS:            getEnv("SMTP_TLS", "starttls"),
+		TurnstileSiteKey:   getEnv("TURNSTILE_SITE_KEY", ""),
+		TurnstileSecretKey: getEnv("TURNSTILE_SECRET_KEY", ""),
 	}
 }
 

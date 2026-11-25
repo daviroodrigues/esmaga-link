@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/daviroodrigues/esmaga-api/internal/domain"
+	"github.com/daviroodrigues/esmaga-api/internal/security"
 	"github.com/daviroodrigues/esmaga-api/internal/service"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -14,16 +15,35 @@ import (
 
 type LinkHandler struct {
 	linkService *service.LinkService
+	turnstile   *security.TurnstileVerifier
 }
 
-func NewLinkHandler(linkService *service.LinkService) *LinkHandler {
-	return &LinkHandler{linkService: linkService}
+func NewLinkHandler(linkService *service.LinkService, turnstile *security.TurnstileVerifier) *LinkHandler {
+	return &LinkHandler{linkService: linkService, turnstile: turnstile}
 }
 
 type EditLinkResponse struct {
 	Message     string `json:"message" example:"link atualizado com sucesso"`
 	ShortCode   string `json:"short_code" example:"aB3x9Z"`
 	OriginalURL string `json:"original_url" example:"https://exemplo.com/novo-destino"`
+}
+
+type DeleteLinkResponse struct {
+	Message   string `json:"message" example:"link desativado com sucesso"`
+	ShortCode string `json:"short_code" example:"aB3x9Z"`
+}
+
+func handleLinkMutationError(w http.ResponseWriter, err error) {
+	status := http.StatusBadRequest
+	switch {
+	case errors.Is(err, service.ErrUnauthorizedLink), errors.Is(err, service.ErrEmailNotVerified):
+		status = http.StatusForbidden
+	case errors.Is(err, service.ErrLinkImmutable):
+		status = http.StatusConflict
+	case errors.Is(err, service.ErrLinkNotFound):
+		status = http.StatusNotFound
+	}
+	writeJSONError(w, status, err.Error())
 }
 
 // Create godoc
@@ -47,6 +67,13 @@ func (h *LinkHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var userID *uuid.UUID
 	if claims, ok := r.Context().Value(UserClaimsKey).(*service.TokenClaims); ok && claims != nil {
 		userID = &claims.UserID
+	}
+
+	if userID == nil && h.turnstile != nil {
+		if err := h.turnstile.Verify(r.Context(), req.TurnstileToken, r.RemoteAddr); err != nil {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 
 	link, err := h.linkService.CreateLink(r.Context(), req.OriginalURL, userID)
@@ -94,15 +121,7 @@ func (h *LinkHandler) Edit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.linkService.EditLink(r.Context(), code, claims.UserID, req.OriginalURL); err != nil {
-		status := http.StatusBadRequest
-		if errors.Is(err, service.ErrUnauthorizedLink) {
-			status = http.StatusForbidden
-		} else if errors.Is(err, service.ErrLinkImmutable) {
-			status = http.StatusConflict
-		} else if errors.Is(err, service.ErrLinkNotFound) {
-			status = http.StatusNotFound
-		}
-		writeJSONError(w, status, err.Error())
+		handleLinkMutationError(w, err)
 		return
 	}
 
@@ -110,6 +129,44 @@ func (h *LinkHandler) Edit(w http.ResponseWriter, r *http.Request) {
 		Message:     "link atualizado com sucesso",
 		ShortCode:   code,
 		OriginalURL: req.OriginalURL,
+	})
+}
+
+// Delete godoc
+// @Summary		Desativar link
+// @Description	Desativa um link pertencente ao usuário autenticado e invalida seu cache
+// @Tags			Links
+// @Produce		json
+// @Security		BearerAuth
+// @Param			code	path		string	true	"Código curto do link"
+// @Success		200		{object}	DeleteLinkResponse
+// @Failure		400		{object}	ErrorResponse
+// @Failure		401		{object}	ErrorResponse
+// @Failure		403		{object}	ErrorResponse
+// @Failure		404		{object}	ErrorResponse
+// @Failure		409		{object}	ErrorResponse
+// @Router			/api/v1/links/{code} [delete]
+func (h *LinkHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	claims, ok := r.Context().Value(UserClaimsKey).(*service.TokenClaims)
+	if !ok || claims == nil {
+		writeJSONError(w, http.StatusUnauthorized, "não autorizado")
+		return
+	}
+
+	code := chi.URLParam(r, "code")
+	if code == "" {
+		writeJSONError(w, http.StatusBadRequest, "código do link não informado")
+		return
+	}
+
+	if err := h.linkService.DeleteLink(r.Context(), code, claims.UserID); err != nil {
+		handleLinkMutationError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, DeleteLinkResponse{
+		Message:   "link desativado com sucesso",
+		ShortCode: code,
 	})
 }
 

@@ -157,6 +157,16 @@ func (s *LinkService) GetLinkByCode(ctx context.Context, shortCode string) (stri
 }
 
 func (s *LinkService) EditLink(ctx context.Context, shortCode string, userID uuid.UUID, newURL string) error {
+	if s.authService != nil {
+		verified, err := s.authService.IsEmailVerified(ctx, userID)
+		if err != nil {
+			return err
+		}
+		if !verified {
+			return ErrEmailNotVerified
+		}
+	}
+
 	if s.validator != nil {
 		if err := s.validator.ValidateDestination(newURL); err != nil {
 			return err
@@ -191,13 +201,63 @@ func (s *LinkService) EditLink(ctx context.Context, shortCode string, userID uui
 		return err
 	}
 
-	// Invalida cache L1 e Redis
+	// Invalida cache L1, Redis e notifica demais réplicas
+	s.invalidateCache(ctx, shortCode)
+
+	return nil
+}
+
+func (s *LinkService) DeleteLink(ctx context.Context, shortCode string, userID uuid.UUID) error {
+	if s.authService != nil {
+		verified, err := s.authService.IsEmailVerified(ctx, userID)
+		if err != nil {
+			return err
+		}
+		if !verified {
+			return ErrEmailNotVerified
+		}
+	}
+
+	link, err := s.linkRepo.GetByCode(ctx, shortCode)
+	if err != nil {
+		return err
+	}
+	if link == nil || !link.IsActive {
+		return ErrLinkNotFound
+	}
+	if link.UserID == nil {
+		return ErrLinkImmutable
+	}
+	if *link.UserID != userID {
+		return ErrUnauthorizedLink
+	}
+
+	if err := s.linkRepo.DeactivateLink(ctx, shortCode, userID, link.CreatedAt); err != nil {
+		return err
+	}
+
+	s.invalidateCache(ctx, shortCode)
+	return nil
+}
+
+// StartCacheInvalidationListener escuta eventos de invalidação do Redis Pub/Sub e limpa o cache L1 local.
+func (s *LinkService) StartCacheInvalidationListener(ctx context.Context) {
+	if s.cacheRepo == nil || s.l1Cache == nil {
+		return
+	}
+	s.cacheRepo.SubscribeInvalidations(ctx, func(shortCode string) {
+		s.l1Cache.Delete(shortCode)
+	})
+}
+
+func (s *LinkService) invalidateCache(ctx context.Context, shortCode string) {
 	if s.l1Cache != nil {
 		s.l1Cache.Delete(shortCode)
 	}
-	_ = s.cacheRepo.DeleteLink(ctx, shortCode)
-
-	return nil
+	if s.cacheRepo != nil {
+		_ = s.cacheRepo.DeleteLink(ctx, shortCode)
+		_ = s.cacheRepo.PublishInvalidation(ctx, shortCode)
+	}
 }
 
 func (s *LinkService) GetLinkAnalytics(ctx context.Context, shortCode string, userID uuid.UUID, days int) (*domain.LinkAnalytics, error) {
@@ -233,10 +293,7 @@ func (s *LinkService) DeleteAccount(ctx context.Context, userID uuid.UUID, keepL
 			return err
 		}
 		for _, code := range codes {
-			if s.l1Cache != nil {
-				s.l1Cache.Delete(code)
-			}
-			_ = s.cacheRepo.DeleteLink(ctx, code)
+			s.invalidateCache(ctx, code)
 		}
 	}
 

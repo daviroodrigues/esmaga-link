@@ -6,21 +6,47 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/daviroodrigues/esmaga-api/internal/config"
 	"github.com/daviroodrigues/esmaga-api/internal/domain"
+	"github.com/daviroodrigues/esmaga-api/internal/email"
+	"github.com/daviroodrigues/esmaga-api/internal/observability"
 	"github.com/daviroodrigues/esmaga-api/internal/queue/rabbitmq"
 	cassRepo "github.com/daviroodrigues/esmaga-api/internal/repository/cassandra"
+	pgRepo "github.com/daviroodrigues/esmaga-api/internal/repository/postgres"
 	"github.com/gocql/gocql"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
 	cfg := config.Load()
-	log.Println("[Analytics Worker] Inicializando consumidor de métricas...")
+	observability.InitLogger("esmaga-worker", cfg.InstanceID)
+	log.Println("[Worker] Inicializando consumidores (analytics + e-mail)...")
 
-	// 1. Conexão com Cassandra
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// 1. Conexão com PostgreSQL (templates de e-mail)
+	pgPool, err := pgxpool.New(ctx, cfg.PostgresURL)
+	if err != nil {
+		log.Fatalf("[Worker] Falha ao conectar no PostgreSQL: %v", err)
+	}
+	defer pgPool.Close()
+
+	templateRepo := pgRepo.NewEmailTemplateRepository(pgPool)
+	defaults, err := email.DefaultTemplates()
+	if err != nil {
+		log.Fatalf("[Worker] Falha ao carregar templates padrão: %v", err)
+	}
+	if err := templateRepo.SeedDefaults(ctx, defaults); err != nil {
+		log.Fatalf("[Worker] Falha ao semear templates de e-mail no PostgreSQL: %v", err)
+	}
+	log.Println("[Worker] Templates de e-mail sincronizados com o PostgreSQL.")
+
+	// 2. Conexão com Cassandra
 	cassHosts := strings.Split(cfg.CassandraHosts, ",")
 	cluster := gocql.NewCluster(cassHosts...)
 	cluster.Keyspace = cfg.CassandraKeyspace
@@ -30,20 +56,32 @@ func main() {
 
 	cassSession, err := cluster.CreateSession()
 	if err != nil {
-		log.Fatalf("[Analytics Worker] Falha ao conectar no Cassandra: %v", err)
+		log.Fatalf("[Worker] Falha ao conectar no Cassandra: %v", err)
 	}
 	defer cassSession.Close()
-	log.Println("[Analytics Worker] Conectado ao Cassandra com sucesso.")
+	log.Println("[Worker] Conectado ao Cassandra com sucesso.")
 
 	linkRepo := cassRepo.NewLinkRepository(cassSession)
 
-	// 2. Conexão com RabbitMQ Consumer
-	consumer, err := rabbitmq.NewConsumer(cfg.RabbitMQURL)
+	// 3. Conexão com RabbitMQ Consumers
+	clickConsumer, err := rabbitmq.NewConsumer(cfg.RabbitMQURL)
 	if err != nil {
-		log.Fatalf("[Analytics Worker] Falha ao conectar consumidor RabbitMQ: %v", err)
+		log.Fatalf("[Worker] Falha ao conectar consumidor de cliques RabbitMQ: %v", err)
 	}
-	defer consumer.Close()
-	log.Println("[Analytics Worker] Conectado à fila do RabbitMQ.")
+	defer clickConsumer.Close()
+
+	emailConsumer, err := rabbitmq.NewEmailConsumer(cfg.RabbitMQURL)
+	if err != nil {
+		log.Fatalf("[Worker] Falha ao conectar consumidor de e-mail RabbitMQ: %v", err)
+	}
+	defer emailConsumer.Close()
+	log.Println("[Worker] Conectado às filas do RabbitMQ.")
+
+	emailRenderer := email.NewRenderer(templateRepo)
+	emailSender, err := email.NewSender(cfg)
+	if err != nil {
+		log.Fatalf("[Worker] Configuração de e-mail inválida: %v", err)
+	}
 
 	// Graceful Shutdown
 	sigChan := make(chan os.Signal, 1)
@@ -51,28 +89,62 @@ func main() {
 
 	go func() {
 		<-sigChan
-		log.Println("[Analytics Worker] Encerrando worker...")
-		consumer.Close()
+		log.Println("[Worker] Encerrando worker...")
+		cancel()
+		clickConsumer.Close()
+		emailConsumer.Close()
 		cassSession.Close()
+		pgPool.Close()
 		os.Exit(0)
 	}()
 
-	// 3. Loop de consumo de eventos de clique
-	err = consumer.Consume(func(event *domain.ClickEvent) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
+	var wg sync.WaitGroup
+	wg.Add(2)
 
-		if err := linkRepo.InsertClickEvent(ctx, event); err != nil {
-			log.Printf("[Analytics Worker] Falha ao persistir clique no Cassandra: %v", err)
-			return err
+	// 4. Consumidor de cliques (Analytics)
+	go func() {
+		defer wg.Done()
+		err := clickConsumer.Consume(func(event *domain.ClickEvent) error {
+			reqCtx, reqCancel := context.WithTimeout(ctx, 3*time.Second)
+			defer reqCancel()
+
+			if err := linkRepo.InsertClickEvent(reqCtx, event); err != nil {
+				log.Printf("[Analytics Worker] Falha ao persistir clique no Cassandra: %v", err)
+				return err
+			}
+
+			log.Printf("[Analytics Worker] Clique registrado para short_code=%s (ip=%s, device=%s)",
+				event.ShortCode, event.IPAddress, event.DeviceType)
+			return nil
+		})
+		if err != nil {
+			log.Printf("[Analytics Worker] Erro durante consumo da fila: %v", err)
 		}
+	}()
 
-		log.Printf("[Analytics Worker] Clique registrado para short_code=%s (ip=%s, device=%s)",
-			event.ShortCode, event.IPAddress, event.DeviceType)
-		return nil
-	})
+	// 5. Consumidor de e-mails transacionais
+	go func() {
+		defer wg.Done()
+		err := emailConsumer.Consume(func(msg *domain.EmailMessage) error {
+			reqCtx, reqCancel := context.WithTimeout(ctx, 15*time.Second)
+			defer reqCancel()
 
-	if err != nil {
-		log.Fatalf("[Analytics Worker] Erro durante consumo da fila: %v", err)
-	}
+			subj, htmlBody, textBody, err := emailRenderer.Render(reqCtx, msg.Template, msg.Variables)
+			if err != nil {
+				return err
+			}
+
+			if err := emailSender.Send(reqCtx, msg.To, subj, htmlBody, textBody); err != nil {
+				return err
+			}
+
+			log.Printf("[Email Worker] E-mail %q enviado para %s", msg.Template, msg.To)
+			return nil
+		})
+		if err != nil {
+			log.Printf("[Email Worker] Erro durante consumo da fila: %v", err)
+		}
+	}()
+
+	wg.Wait()
 }

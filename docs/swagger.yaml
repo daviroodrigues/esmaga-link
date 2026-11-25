@@ -4,6 +4,8 @@ definitions:
     properties:
       original_url:
         type: string
+      turnstile_token:
+        type: string
     type: object
   domain.DeleteAccountRequest:
     properties:
@@ -62,9 +64,17 @@ definitions:
         type: string
       email:
         type: string
+      email_verified_at:
+        type: string
       id:
         type: string
+      last_login_at:
+        type: string
+      name:
+        type: string
       role:
+        type: string
+      status:
         type: string
       updated_at:
         type: string
@@ -87,6 +97,15 @@ definitions:
         example: conta excluída com sucesso
         type: string
     type: object
+  http.DeleteLinkResponse:
+    properties:
+      message:
+        example: link desativado com sucesso
+        type: string
+      short_code:
+        example: aB3x9Z
+        type: string
+    type: object
   http.EditLinkResponse:
     properties:
       message:
@@ -97,6 +116,15 @@ definitions:
         type: string
       short_code:
         example: aB3x9Z
+        type: string
+    type: object
+  http.EmailRequest:
+    properties:
+      email:
+        example: usuario@exemplo.com
+        type: string
+      turnstile_token:
+        example: ""
         type: string
     type: object
   http.ErrorResponse:
@@ -114,10 +142,76 @@ definitions:
         example: ok
         type: string
     type: object
-  http.LoginResponse:
+  http.MessageResponse:
+    properties:
+      message:
+        example: operação realizada com sucesso
+        type: string
+    type: object
+  http.RefreshRequest:
+    properties:
+      refresh_token:
+        example: refresh-token-aqui
+        type: string
+    type: object
+  http.RegisterRequest:
+    properties:
+      email:
+        example: usuario@exemplo.com
+        type: string
+      name:
+        example: Davi
+        type: string
+      password:
+        example: senha123
+        type: string
+      turnstile_token:
+        example: ""
+        type: string
+    type: object
+  http.ResetPasswordRequest:
+    properties:
+      new_password:
+        example: novaSenha123
+        type: string
+      token:
+        example: token-de-reset
+        type: string
+    type: object
+  http.TokenRequest:
     properties:
       token:
+        example: token-de-verificacao
+        type: string
+    type: object
+  http.UpdateProfileRequest:
+    properties:
+      current_password:
+        example: senhaAtual123
+        type: string
+      name:
+        example: Davi Rodrigues
+        type: string
+      new_password:
+        example: novaSenha123
+        type: string
+    type: object
+  service.AuthTokens:
+    properties:
+      access_token:
         example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        type: string
+      email_verified:
+        example: true
+        type: boolean
+      expires_in:
+        example: 900
+        type: integer
+      refresh_token:
+        example: dGhpcy1pcy1hLXJlZnJlc2gtdG9rZW4...
+        type: string
+      token_type:
+        example: Bearer
         type: string
     type: object
 info:
@@ -159,11 +253,39 @@ paths:
       summary: Excluir conta do usuário
       tags:
       - Auth
+  /api/v1/auth/forgot-password:
+    post:
+      consumes:
+      - application/json
+      description: Responde sempre 200 OK e, se o e-mail existir, envia link de redefinição
+        (TTL 30min)
+      parameters:
+      - description: E-mail cadastrado
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/http.EmailRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.MessageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Solicitar redefinição de senha
+      tags:
+      - Auth
   /api/v1/auth/login:
     post:
       consumes:
       - application/json
-      description: Autentica o usuário e retorna um token JWT
+      description: Autentica o usuário e retorna par access_token (15min) + refresh_token
+        (30 dias)
       parameters:
       - description: Credenciais de acesso
         in: body
@@ -177,7 +299,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/http.LoginResponse'
+            $ref: '#/definitions/service.AuthTokens'
         "400":
           description: Bad Request
           schema:
@@ -186,21 +308,123 @@ paths:
           description: Unauthorized
           schema:
             $ref: '#/definitions/http.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
       summary: Autenticar usuário
+      tags:
+      - Auth
+  /api/v1/auth/logout:
+    post:
+      consumes:
+      - application/json
+      description: Revoga o refresh_token atual e limpa o cookie de sessão
+      parameters:
+      - description: Refresh token (opcional se enviado via cookie)
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/http.RefreshRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.MessageResponse'
+      summary: Encerrar sessão
+      tags:
+      - Auth
+  /api/v1/auth/me:
+    get:
+      description: Retorna os dados da conta autenticada
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.User'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Perfil do usuário
+      tags:
+      - Auth
+    patch:
+      consumes:
+      - application/json
+      description: Atualiza nome do usuário e/ou altera a senha (exigindo current_password)
+      parameters:
+      - description: Campos para atualização
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/http.UpdateProfileRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.User'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Atualizar perfil ou senha
+      tags:
+      - Auth
+  /api/v1/auth/refresh:
+    post:
+      consumes:
+      - application/json
+      description: Rotaciona o refresh_token (via body ou cookie HttpOnly) e emite
+        um novo par de tokens
+      parameters:
+      - description: Refresh token (opcional se enviado via cookie)
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/http.RefreshRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.AuthTokens'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Renovar sessão
       tags:
       - Auth
   /api/v1/auth/register:
     post:
       consumes:
       - application/json
-      description: Cria uma nova conta de usuário com e-mail e senha (mínimo 6 caracteres)
+      description: Cria conta com status pendente e dispara e-mail de verificação
+        assíncrono
       parameters:
       - description: Dados de cadastro
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/http.AuthRequest'
+          $ref: '#/definitions/http.RegisterRequest'
       produces:
       - application/json
       responses:
@@ -213,6 +437,86 @@ paths:
           schema:
             $ref: '#/definitions/http.ErrorResponse'
       summary: Cadastrar novo usuário
+      tags:
+      - Auth
+  /api/v1/auth/resend-verification:
+    post:
+      consumes:
+      - application/json
+      description: 'Reenvia o e-mail de confirmação para contas pendentes (rate limit:
+        1 req/min)'
+      parameters:
+      - description: E-mail cadastrado
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/http.EmailRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.MessageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Reenviar verificação de e-mail
+      tags:
+      - Auth
+  /api/v1/auth/reset-password:
+    post:
+      consumes:
+      - application/json
+      description: Valida o token de redefinição, atualiza a senha e revoga sessões
+        ativas
+      parameters:
+      - description: Token e nova senha
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/http.ResetPasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.MessageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Redefinir senha
+      tags:
+      - Auth
+  /api/v1/auth/verify-email:
+    post:
+      consumes:
+      - application/json
+      description: Valida o token de verificação de uso único e ativa a conta
+      parameters:
+      - description: Token de verificação
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/http.TokenRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.MessageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Confirmar e-mail
       tags:
       - Auth
   /api/v1/links:
@@ -269,6 +573,47 @@ paths:
       tags:
       - Links
   /api/v1/links/{code}:
+    delete:
+      description: Desativa um link pertencente ao usuário autenticado e invalida
+        seu cache
+      parameters:
+      - description: Código curto do link
+        in: path
+        name: code
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.DeleteLinkResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Desativar link
+      tags:
+      - Links
     put:
       consumes:
       - application/json

@@ -14,6 +14,7 @@ import (
 	"github.com/daviroodrigues/esmaga-api/internal/config"
 	httpHandler "github.com/daviroodrigues/esmaga-api/internal/handler/http"
 	"github.com/daviroodrigues/esmaga-api/internal/idgen"
+	"github.com/daviroodrigues/esmaga-api/internal/observability"
 	"github.com/daviroodrigues/esmaga-api/internal/queue/rabbitmq"
 	cassRepo "github.com/daviroodrigues/esmaga-api/internal/repository/cassandra"
 	pgRepo "github.com/daviroodrigues/esmaga-api/internal/repository/postgres"
@@ -35,6 +36,8 @@ import (
 // @description				Informe o token JWT no formato: Bearer {token}
 func main() {
 	cfg := config.Load()
+	observability.InitLogger("esmaga-api", cfg.InstanceID)
+	metrics := observability.NewMetrics()
 	log.Printf("[%s] Iniciando Esmaga Link API na porta %s...", cfg.InstanceID, cfg.Port)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -92,6 +95,7 @@ func main() {
 
 	// 5. Injeção de Repositórios Básicos
 	userRepository := pgRepo.NewUserRepository(pgPool)
+	tokenRepository := pgRepo.NewTokenRepository(pgPool)
 	linkRepository := cassRepo.NewLinkRepository(cassSession)
 	cacheRepository := redisRepo.NewCacheRepository(rdb)
 	urlValidator := security.NewURLValidator(nil)
@@ -120,15 +124,18 @@ func main() {
 	}
 
 	// 7. Injeção de Serviços e Handlers
-	authService := service.NewAuthService(userRepository, cfg.JWTSecret)
+	authService := service.NewAuthService(userRepository, tokenRepository, publisher, cfg.JWTSecret, cfg.AppBaseURL)
 	linkService := service.NewLinkService(idGenerator, linkRepository, cacheRepository, publisher, authService, urlValidator)
+	go linkService.StartCacheInvalidationListener(ctx)
 
-	authHandler := httpHandler.NewAuthHandler(authService, linkService)
-	linkHandler := httpHandler.NewLinkHandler(linkService)
+	turnstileVerifier := security.NewTurnstileVerifier(cfg.TurnstileSecretKey)
+
+	authHandler := httpHandler.NewAuthHandler(authService, linkService, turnstileVerifier)
+	linkHandler := httpHandler.NewLinkHandler(linkService, turnstileVerifier)
 	redirectHandler := httpHandler.NewRedirectHandler(linkService)
 	rateLimiter := httpHandler.NewRateLimiter(rdb)
 
-	router := httpHandler.NewRouter(cfg.InstanceID, authService, authHandler, linkHandler, redirectHandler, rateLimiter)
+	router := httpHandler.NewRouter(cfg.InstanceID, cfg.TurnstileSiteKey, metrics, authService, authHandler, linkHandler, redirectHandler, rateLimiter)
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.Port,

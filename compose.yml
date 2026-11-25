@@ -8,14 +8,14 @@ services:
     container_name: esmaga-postgres
     restart: always
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-esmaga_auth}
-      POSTGRES_USER: ${POSTGRES_USER:-esmaga_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-esmaga_secret}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - ./deployments/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-esmaga_user} -d ${POSTGRES_DB:-esmaga_auth}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -69,8 +69,8 @@ services:
     container_name: esmaga-rabbitmq
     restart: always
     environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-guest}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS}
     volumes:
       - rabbitmqdata:/var/lib/rabbitmq
     healthcheck:
@@ -91,20 +91,27 @@ services:
     container_name: esmaga-api
     restart: always
     environment:
-      PORT: "8080"
-      INSTANCE_ID: "api-1"
-      POSTGRES_URL: "postgres://${POSTGRES_USER:-esmaga_user}:${POSTGRES_PASSWORD:-esmaga_secret}@postgres:5432/${POSTGRES_DB:-esmaga_auth}?sslmode=disable"
+      PORT: ${PORT}
+      INSTANCE_ID: ${INSTANCE_ID}
+      POSTGRES_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable"
       CASSANDRA_HOSTS: "cassandra"
-      CASSANDRA_KEYSPACE: "esmaga_link"
+      CASSANDRA_KEYSPACE: ${CASSANDRA_KEYSPACE}
       REDIS_ADDR: "redis:6379"
-      RABBITMQ_URL: "amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/"
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      RABBITMQ_URL: "amqp://${RABBITMQ_USER}:${RABBITMQ_PASS}@rabbitmq:5672/"
       JWT_SECRET: ${JWT_SECRET}
       ALPHABET_SEED: ${ALPHABET_SEED}
+      ID_BATCH_SIZE: ${ID_BATCH_SIZE}
+      APP_BASE_URL: ${APP_BASE_URL}
+      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY}
     depends_on:
       postgres:
         condition: service_healthy
       cassandra:
         condition: service_healthy
+      cassandra-init:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       rabbitmq:
@@ -117,12 +124,24 @@ services:
     container_name: esmaga-worker
     restart: always
     environment:
+      INSTANCE_ID: ${INSTANCE_ID}
+      POSTGRES_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable"
       CASSANDRA_HOSTS: "cassandra"
-      CASSANDRA_KEYSPACE: "esmaga_link"
+      CASSANDRA_KEYSPACE: ${CASSANDRA_KEYSPACE}
       RABBITMQ_URL: "amqp://${RABBITMQ_USER}:${RABBITMQ_PASS}@rabbitmq:5672/"
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      SMTP_FROM: ${SMTP_FROM}
+      SMTP_TLS: ${SMTP_TLS}
     depends_on:
+      postgres:
+        condition: service_healthy
       cassandra:
         condition: service_healthy
+      cassandra-init:
+        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
 

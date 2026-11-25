@@ -189,6 +189,25 @@ func (r *LinkRepository) UpdateURL(ctx context.Context, shortCode string, userID
 	return nil
 }
 
+func (r *LinkRepository) DeactivateLink(ctx context.Context, shortCode string, userID uuid.UUID, createdAt time.Time) error {
+	u, err := gocql.ParseUUID(userID.String())
+	if err != nil {
+		return err
+	}
+
+	queryCode := `UPDATE links_by_code SET is_active = false WHERE short_code = ?`
+	if err := r.session.Query(queryCode, shortCode).WithContext(ctx).Exec(); err != nil {
+		return fmt.Errorf("erro ao desativar link em links_by_code: %w", err)
+	}
+
+	queryUser := `UPDATE links_by_user SET is_active = false WHERE user_id = ? AND created_at = ? AND short_code = ?`
+	if err := r.session.Query(queryUser, u, createdAt, shortCode).WithContext(ctx).Exec(); err != nil {
+		return fmt.Errorf("erro ao desativar link em links_by_user: %w", err)
+	}
+
+	return nil
+}
+
 func (r *LinkRepository) AnonymizeUserLinks(ctx context.Context, userID uuid.UUID) error {
 	links, err := r.GetByUser(ctx, userID)
 	if err != nil {

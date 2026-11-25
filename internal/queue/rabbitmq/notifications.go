@@ -1,0 +1,233 @@
+package rabbitmq
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log"
+	"strconv"
+	"time"
+
+	"github.com/daviroodrigues/esmaga-api/internal/domain"
+	amqp "github.com/rabbitmq/amqp091-go"
+)
+
+const (
+	ExchangeNotifications = "notifications.topic"
+	ExchangeDLX           = "notifications.dlx"
+
+	QueueEmail      = "notifications.email"
+	QueueEmailRetry = "notifications.email.retry"
+	QueueEmailDLQ   = "notifications.email.dlq"
+
+	RoutingKeyEmailVerification = "email.verification"
+	RoutingKeyPasswordReset     = "email.password_reset"
+	RoutingKeyAccountDeleted    = "email.account_deleted"
+	RoutingKeyEmailRetry        = "email.retry"
+	RoutingKeyEmailDLQ          = "email.dlq"
+)
+
+var emailRetryDelays = []time.Duration{
+	10 * time.Second,
+	1 * time.Minute,
+	5 * time.Minute,
+}
+
+func declareNotificationsTopology(ch *amqp.Channel) error {
+	if err := ch.ExchangeDeclare(ExchangeNotifications, "topic", true, false, false, false, nil); err != nil {
+		return fmt.Errorf("erro ao declarar exchange %s: %w", ExchangeNotifications, err)
+	}
+	if err := ch.ExchangeDeclare(ExchangeDLX, "topic", true, false, false, false, nil); err != nil {
+		return fmt.Errorf("erro ao declarar exchange %s: %w", ExchangeDLX, err)
+	}
+
+	if _, err := ch.QueueDeclare(QueueEmail, true, false, false, false, amqp.Table{
+		"x-dead-letter-exchange":    ExchangeDLX,
+		"x-dead-letter-routing-key": RoutingKeyEmailDLQ,
+	}); err != nil {
+		return fmt.Errorf("erro ao declarar fila %s: %w", QueueEmail, err)
+	}
+	if err := ch.QueueBind(QueueEmail, "email.*", ExchangeNotifications, false, nil); err != nil {
+		return fmt.Errorf("erro ao vincular fila %s: %w", QueueEmail, err)
+	}
+
+	if _, err := ch.QueueDeclare(QueueEmailRetry, true, false, false, false, amqp.Table{
+		"x-dead-letter-exchange": ExchangeNotifications,
+	}); err != nil {
+		return fmt.Errorf("erro ao declarar fila %s: %w", QueueEmailRetry, err)
+	}
+	if err := ch.QueueBind(QueueEmailRetry, RoutingKeyEmailRetry, ExchangeDLX, false, nil); err != nil {
+		return fmt.Errorf("erro ao vincular fila %s: %w", QueueEmailRetry, err)
+	}
+
+	if _, err := ch.QueueDeclare(QueueEmailDLQ, true, false, false, false, nil); err != nil {
+		return fmt.Errorf("erro ao declarar fila %s: %w", QueueEmailDLQ, err)
+	}
+	if err := ch.QueueBind(QueueEmailDLQ, RoutingKeyEmailDLQ, ExchangeDLX, false, nil); err != nil {
+		return fmt.Errorf("erro ao vincular fila %s: %w", QueueEmailDLQ, err)
+	}
+
+	return nil
+}
+
+// PublishEmail publica uma solicitação de envio de e-mail na exchange notifications.topic.
+func (p *Publisher) PublishEmail(ctx context.Context, routingKey string, msg *domain.EmailMessage) error {
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return fmt.Errorf("erro ao serializar email message: %w", err)
+	}
+
+	p.pubMu.Lock()
+	defer p.pubMu.Unlock()
+
+	return p.channel.PublishWithContext(
+		ctx,
+		ExchangeNotifications,
+		routingKey,
+		false,
+		false,
+		amqp.Publishing{
+			ContentType:  "application/json",
+			DeliveryMode: amqp.Persistent,
+			MessageId:    msg.IdempotencyKey,
+			Body:         data,
+		},
+	)
+}
+
+// EmailConsumer consome eventos de e-mail com retry exponencial e DLQ.
+type EmailConsumer struct {
+	conn    *amqp.Connection
+	channel *amqp.Channel
+}
+
+func NewEmailConsumer(url string) (*EmailConsumer, error) {
+	conn, err := amqp.Dial(url)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao conectar no rabbitmq email consumer: %w", err)
+	}
+
+	ch, err := conn.Channel()
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("erro ao abrir canal rabbitmq email consumer: %w", err)
+	}
+
+	if err := declareNotificationsTopology(ch); err != nil {
+		ch.Close()
+		conn.Close()
+		return nil, err
+	}
+
+	return &EmailConsumer{conn: conn, channel: ch}, nil
+}
+
+func (c *EmailConsumer) Consume(handler func(msg *domain.EmailMessage) error) error {
+	msgs, err := c.channel.Consume(
+		QueueEmail,
+		"",
+		false, // manual ack
+		false,
+		false,
+		false,
+		nil,
+	)
+	if err != nil {
+		return fmt.Errorf("erro ao iniciar consumo de e-mails: %w", err)
+	}
+
+	for d := range msgs {
+		var msg domain.EmailMessage
+		if err := json.Unmarshal(d.Body, &msg); err != nil {
+			log.Printf("[Email Worker] Payload inválido, enviando para DLQ: %v", err)
+			_ = d.Nack(false, false)
+			continue
+		}
+
+		if err := handler(&msg); err != nil {
+			c.handleFailure(d, err)
+			continue
+		}
+
+		_ = d.Ack(false)
+	}
+
+	return nil
+}
+
+func (c *EmailConsumer) handleFailure(d amqp.Delivery, cause error) {
+	retries := extractRetryCount(d.Headers)
+	if retries >= len(emailRetryDelays) {
+		log.Printf("[Email Worker] Limite de tentativas atingido (%d), movendo para DLQ: %v", retries, cause)
+		_ = d.Nack(false, false) // vai para notifications.dlx -> email.dlq
+		return
+	}
+
+	delay := emailRetryDelays[retries]
+	headers := amqp.Table{}
+	for k, v := range d.Headers {
+		headers[k] = v
+	}
+	headers["x-retry-count"] = int32(retries + 1)
+	headers["x-original-routing-key"] = d.RoutingKey
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Publica na fila de retry com Expiration; ao expirar, o DLX devolve para notifications.topic.
+	// Nota: para preservar a routing key original ao voltar, definimos x-dead-letter-routing-key na fila ou
+	// publicamos com routing key original após TTL via ExchangeNotifications.
+	err := c.channel.PublishWithContext(
+		ctx,
+		ExchangeDLX,
+		RoutingKeyEmailRetry,
+		false,
+		false,
+		amqp.Publishing{
+			ContentType:  d.ContentType,
+			DeliveryMode: amqp.Persistent,
+			MessageId:    d.MessageId,
+			Headers:      headers,
+			Expiration:   strconv.FormatInt(delay.Milliseconds(), 10),
+			Body:         d.Body,
+		},
+	)
+	if err != nil {
+		log.Printf("[Email Worker] Falha ao agendar retry, recolocando na fila: %v", err)
+		_ = d.Nack(false, true)
+		return
+	}
+
+	log.Printf("[Email Worker] Erro ao enviar e-mail (tentativa %d/%d), novo envio em %s: %v",
+		retries+1, len(emailRetryDelays), delay, cause)
+	_ = d.Ack(false)
+}
+
+func extractRetryCount(headers amqp.Table) int {
+	if headers == nil {
+		return 0
+	}
+	raw, ok := headers["x-retry-count"]
+	if !ok {
+		return 0
+	}
+	switch v := raw.(type) {
+	case int:
+		return v
+	case int32:
+		return int(v)
+	case int64:
+		return int(v)
+	default:
+		return 0
+	}
+}
+
+func (c *EmailConsumer) Close() {
+	if c.channel != nil {
+		_ = c.channel.Close()
+	}
+	if c.conn != nil {
+		_ = c.conn.Close()
+	}
+}

@@ -27,10 +27,6 @@ function loadTurnstileScript() {
   return scriptLoadPromise;
 }
 
-/**
- * Inicializa o widget Turnstile em um container caso TURNSTILE_SITE_KEY esteja configurada no backend.
- * Retorna um controlador com getToken() e reset().
- */
 export async function mountTurnstile(containerEl) {
   if (!containerEl) {
     return { enabled: false, getToken: () => '', reset: () => {} };

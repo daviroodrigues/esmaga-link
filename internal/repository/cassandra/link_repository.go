@@ -32,7 +32,6 @@ func (r *LinkRepository) Create(ctx context.Context, l *domain.Link) error {
 		}
 	}
 
-	// 1. Inserir com IF NOT EXISTS (LWT Paxos) para garantir que nunca sobrescreve um link existente
 	queryCode := `
 		INSERT INTO links_by_code (short_code, original_url, user_id, is_active, created_at)
 		VALUES (?, ?, ?, ?, ?)
@@ -50,7 +49,6 @@ func (r *LinkRepository) Create(ctx context.Context, l *domain.Link) error {
 		return ErrCodeCollision
 	}
 
-	// 2. Se for link autenticado, indexar por usuário
 	if userUUID != nil {
 		queryUser := `
 			INSERT INTO links_by_user (user_id, created_at, short_code, original_url, is_active)
@@ -172,13 +170,11 @@ func (r *LinkRepository) UpdateURL(ctx context.Context, shortCode string, userID
 		return err
 	}
 
-	// 1. Atualizar links_by_code
 	queryCode := `UPDATE links_by_code SET original_url = ? WHERE short_code = ?`
 	if err := r.session.Query(queryCode, newURL, shortCode).WithContext(ctx).Exec(); err != nil {
 		return fmt.Errorf("erro ao atualizar links_by_code: %w", err)
 	}
 
-	// 2. Para links_by_user, recupera a data de criação original para atualizar a partição
 	var createdAt time.Time
 	err = r.session.Query(`SELECT created_at FROM links_by_code WHERE short_code = ?`, shortCode).WithContext(ctx).Scan(&createdAt)
 	if err == nil {
@@ -217,11 +213,10 @@ func (r *LinkRepository) AnonymizeUserLinks(ctx context.Context, userID uuid.UUI
 	u, _ := gocql.ParseUUID(userID.String())
 
 	for _, l := range links {
-		// Torna anônimo em links_by_code
+
 		queryCode := `UPDATE links_by_code SET user_id = null WHERE short_code = ?`
 		_ = r.session.Query(queryCode, l.ShortCode).WithContext(ctx).Exec()
 
-		// Remove da tabela de usuário
 		queryUser := `DELETE FROM links_by_user WHERE user_id = ? AND created_at = ? AND short_code = ?`
 		_ = r.session.Query(queryUser, u, l.CreatedAt, l.ShortCode).WithContext(ctx).Exec()
 	}
@@ -240,11 +235,10 @@ func (r *LinkRepository) DeactivateUserLinks(ctx context.Context, userID uuid.UU
 
 	for _, l := range links {
 		codes = append(codes, l.ShortCode)
-		// Desativa em links_by_code
+
 		queryCode := `UPDATE links_by_code SET is_active = false WHERE short_code = ?`
 		_ = r.session.Query(queryCode, l.ShortCode).WithContext(ctx).Exec()
 
-		// Remove da tabela de usuário
 		queryUser := `DELETE FROM links_by_user WHERE user_id = ? AND created_at = ? AND short_code = ?`
 		_ = r.session.Query(queryUser, u, l.CreatedAt, l.ShortCode).WithContext(ctx).Exec()
 	}
@@ -254,7 +248,7 @@ func (r *LinkRepository) DeactivateUserLinks(ctx context.Context, userID uuid.UU
 
 func (r *LinkRepository) InsertClickEvent(ctx context.Context, c *domain.ClickEvent) error {
 	bucketDate := c.ClickedAt.UTC().Format("2006-01-02")
-	// Cassandra TimeUUID exige estritamente um UUID v1 (baseado em tempo)
+
 	timeUUID := gocql.TimeUUID()
 
 	query := `

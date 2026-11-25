@@ -5,7 +5,7 @@ import (
 )
 
 func TestCoprimesAndGoldenRatio(t *testing.T) {
-	// Testa o valor testado no primos.cpp
+
 	var eraSize uint64 = 55884102752
 	coprime, err := FindGoldenCoprime(eraSize)
 	if err != nil {
@@ -16,13 +16,11 @@ func TestCoprimesAndGoldenRatio(t *testing.T) {
 		t.Errorf("Coprimo calculado %d não é coprimo com eraSize %d", coprime, eraSize)
 	}
 
-	// Testa inversão modular
 	inv, err := ModularInverse(coprime, eraSize)
 	if err != nil {
 		t.Fatalf("Erro ao calcular inverso modular: %v", err)
 	}
 
-	// (coprime * inv) % eraSize deve ser 1
 	check := mulMod(coprime, inv, eraSize)
 	if check != 1 {
 		t.Errorf("Inverso modular falhou: (coprime * inv) %% eraSize = %d, esperado 1", check)
@@ -60,8 +58,8 @@ func TestShuffleAlphabetDeterministic(t *testing.T) {
 }
 
 func TestEraObfuscationNoCollisionsSmallSet(t *testing.T) {
-	// Testa num conjunto menor se a permutação é estritamente bijetora (sem colisões)
-	var eraSize uint64 = 10007 // primo pequeno para teste
+
+	var eraSize uint64 = 10007
 	coprime, err := FindGoldenCoprime(eraSize)
 	if err != nil {
 		t.Fatalf("Erro ao buscar coprimo: %v", err)
@@ -84,7 +82,7 @@ func TestEraObfuscationNoCollisionsSmallSet(t *testing.T) {
 }
 
 func TestHullDobellValidation(t *testing.T) {
-	// O valor original 3141592653 falha em (A - 1) % 31 == 0
+
 	if IsHullDobellValid(3141592653, DefaultHullDobellC, DefaultUniverseSize62_6) {
 		t.Fatalf("Esperava falha para A=3141592653 no universo 62^6")
 	}
@@ -103,10 +101,10 @@ func TestHullDobellValidation(t *testing.T) {
 }
 
 func TestHullDobellFullPeriodSmallUniverse(t *testing.T) {
-	// Universo reduzido com os mesmos fatores primos de 62^6 (2 e 31): 62^2 = 3844 = 4 * 31^2
+
 	var eraSize uint64 = 62 * 62
-	var a uint64 = 124*17 + 1 // (a - 1) divisível por 124
-	var c uint64 = 1073       // coprimo com 3844
+	var a uint64 = 124*17 + 1
+	var c uint64 = 1073
 
 	if !IsHullDobellValid(a, c, eraSize) {
 		t.Fatalf("Constantes de teste inválidas para Hull-Dobell")
@@ -223,7 +221,6 @@ func TestMultiEraProgression5To6To7(t *testing.T) {
 		encoder: enc,
 	}
 
-	// Primeiro e último ID da Era 5
 	if got := gen.encodeSeqID(1); len(got) != 5 {
 		t.Fatalf("seqID=1 deveria gerar código de 5 chars, obteve %q (len=%d)", got, len(got))
 	}
@@ -231,7 +228,6 @@ func TestMultiEraProgression5To6To7(t *testing.T) {
 		t.Fatalf("último ID da Era 5 deveria gerar 5 chars, obteve %q (len=%d)", got, len(got))
 	}
 
-	// Transição exata para Era 6
 	if got := gen.encodeSeqID(DefaultUniverseSize62_5 + 1); len(got) != 6 {
 		t.Fatalf("primeiro ID da Era 6 deveria gerar 6 chars, obteve %q (len=%d)", got, len(got))
 	}
@@ -239,7 +235,6 @@ func TestMultiEraProgression5To6To7(t *testing.T) {
 		t.Fatalf("último ID da Era 6 deveria gerar 6 chars, obteve %q (len=%d)", got, len(got))
 	}
 
-	// Transição exata para Era 7
 	if got := gen.encodeSeqID(DefaultUniverseSize62_5 + DefaultUniverseSize62_6 + 1); len(got) != 7 {
 		t.Fatalf("primeiro ID da Era 7 deveria gerar 7 chars, obteve %q (len=%d)", got, len(got))
 	}

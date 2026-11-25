@@ -1,9 +1,7 @@
-# Build stage
 FROM golang:alpine AS builder
 
 WORKDIR /app
 
-# Instalar certificados e dependências de build
 RUN apk add --no-cache git ca-certificates tzdata
 
 COPY go.mod go.sum ./
@@ -13,7 +11,6 @@ COPY . .
 
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /app/bin/api ./cmd/api
 
-# Final stage
 FROM alpine:3.20
 
 WORKDIR /app

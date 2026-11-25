@@ -18,7 +18,6 @@ func NewEmailTemplateRepository(pool *pgxpool.Pool) *EmailTemplateRepository {
 	return &EmailTemplateRepository{pool: pool}
 }
 
-// SeedDefaults insere os templates padrão no boot caso ainda não existam no banco.
 func (r *EmailTemplateRepository) SeedDefaults(ctx context.Context, templates []domain.EmailTemplate) error {
 	const query = `
 		INSERT INTO email_templates (slug, subject, html_body, text_body)

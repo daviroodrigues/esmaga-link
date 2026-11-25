@@ -1,8 +1,3 @@
-/**
- * Utilitários de segurança contra XSS e manipulação segura de DOM.
- * Regra estrita: nunca usar innerHTML para dados vindos da API ou storage.
- */
-
 export function isSafeHttpUrl(rawUrl) {
   if (typeof rawUrl !== 'string' || rawUrl.trim() === '') {
     return false;
@@ -136,9 +131,6 @@ export function showToast(toastEl, message) {
   }, 2600);
 }
 
-/**
- * Inicializa botões de visualizar/ocultar senha para todos os elementos com [data-toggle-password].
- */
 export function initPasswordToggles(root = document) {
   const buttons = root.querySelectorAll('[data-toggle-password]');
   for (const btn of buttons) {

@@ -10,7 +10,6 @@ type l1Entry struct {
 	expiresAt int64
 }
 
-// l1Cache é um cache em memória com TTL e limite de entradas para acelerar o hot path sem crescer indefinidamente.
 type l1Cache struct {
 	mu         sync.RWMutex
 	items      map[string]l1Entry
@@ -47,7 +46,7 @@ func (c *l1Cache) Set(key, value string, ttl time.Duration) {
 
 	c.mu.Lock()
 	if len(c.items) >= c.maxEntries {
-		// Remove entradas expiradas primeiro; se ainda cheio, remove uma entrada arbitrária.
+
 		for k, v := range c.items {
 			if now >= v.expiresAt {
 				delete(c.items, k)

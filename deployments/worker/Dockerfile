@@ -1,4 +1,3 @@
-# Build stage
 FROM golang:alpine AS builder
 
 WORKDIR /app
@@ -12,7 +11,6 @@ COPY . .
 
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /app/bin/worker ./cmd/worker
 
-# Final stage
 FROM alpine:3.20
 
 WORKDIR /app

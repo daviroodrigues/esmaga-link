@@ -24,7 +24,6 @@ func TestL1CacheSetGetExpireDelete(t *testing.T) {
 		t.Fatalf("esperava expiração da chave exp")
 	}
 
-	// Verifica limite máximo de entradas
 	c.Set("a", "1", time.Minute)
 	c.Set("b", "2", time.Minute)
 	c.Set("c", "3", time.Minute)

@@ -29,7 +29,6 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// 1. Conexão com PostgreSQL (templates de e-mail)
 	pgPool, err := pgxpool.New(ctx, cfg.PostgresURL)
 	if err != nil {
 		log.Fatalf("[Worker] Falha ao conectar no PostgreSQL: %v", err)
@@ -46,7 +45,6 @@ func main() {
 	}
 	log.Println("[Worker] Templates de e-mail sincronizados com o PostgreSQL.")
 
-	// 2. Conexão com Cassandra
 	cassHosts := strings.Split(cfg.CassandraHosts, ",")
 	cluster := gocql.NewCluster(cassHosts...)
 	cluster.Keyspace = cfg.CassandraKeyspace
@@ -63,7 +61,6 @@ func main() {
 
 	linkRepo := cassRepo.NewLinkRepository(cassSession)
 
-	// 3. Conexão com RabbitMQ Consumers
 	clickConsumer, err := rabbitmq.NewConsumer(cfg.RabbitMQURL)
 	if err != nil {
 		log.Fatalf("[Worker] Falha ao conectar consumidor de cliques RabbitMQ: %v", err)
@@ -83,7 +80,6 @@ func main() {
 		log.Fatalf("[Worker] Configuração de e-mail inválida: %v", err)
 	}
 
-	// Graceful Shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
@@ -101,7 +97,6 @@ func main() {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	// 4. Consumidor de cliques (Analytics)
 	go func() {
 		defer wg.Done()
 		err := clickConsumer.Consume(func(event *domain.ClickEvent) error {
@@ -122,7 +117,6 @@ func main() {
 		}
 	}()
 
-	// 5. Consumidor de e-mails transacionais
 	go func() {
 		defer wg.Done()
 		err := emailConsumer.Consume(func(msg *domain.EmailMessage) error {

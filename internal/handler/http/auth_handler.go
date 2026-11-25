@@ -363,7 +363,7 @@ func (h *AuthHandler) DeleteAccount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req domain.DeleteAccountRequest
-	// Default: manter links anônimos se o campo não for explicitamente enviado como falso
+
 	req.KeepLinksActive = true
 	_ = json.NewDecoder(r.Body).Decode(&req)
 

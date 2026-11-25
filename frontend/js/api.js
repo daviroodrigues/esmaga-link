@@ -1,8 +1,3 @@
-/**
- * Cliente REST e gestão de sessão JWT encapsulada em closure do módulo.
- * O access_token permanece apenas em sessionStorage e o refresh_token em cookie HttpOnly.
- */
-
 const TOKEN_STORAGE_KEY = 'esmaga_jwt_token';
 
 let authToken = (() => {
@@ -34,7 +29,6 @@ function setSessionToken(token) {
   try {
     sessionStorage.setItem(TOKEN_STORAGE_KEY, token);
   } catch {
-    // Fallback em memória caso sessionStorage esteja indisponível
   }
 }
 
@@ -43,7 +37,6 @@ export function clearSession() {
   try {
     sessionStorage.removeItem(TOKEN_STORAGE_KEY);
   } catch {
-    // Ignora erro de storage
   }
 }
 
@@ -166,7 +159,6 @@ export async function logout() {
   try {
     await apiFetch('/api/v1/auth/logout', { method: 'POST', body: JSON.stringify({}) }, false);
   } catch {
-    // Limpa sessão local mesmo se a chamada falhar
   }
   clearSession();
 }

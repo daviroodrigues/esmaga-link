@@ -40,7 +40,6 @@ func (h *RedirectHandler) HandleRedirect(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Disparo de métricas assíncrono (não bloqueia a resposta do usuário)
 	event := &domain.ClickEvent{
 		EventID:    uuid.New(),
 		ShortCode:  code,
@@ -48,12 +47,11 @@ func (h *RedirectHandler) HandleRedirect(w http.ResponseWriter, r *http.Request)
 		IPAddress:  getRealIP(r),
 		UserAgent:  r.UserAgent(),
 		Referrer:   r.Referer(),
-		Country:    r.Header.Get("CF-IPCountry"), // Se atrás de CDN ou proxy
+		Country:    r.Header.Get("CF-IPCountry"),
 		DeviceType: detectDevice(r.UserAgent()),
 	}
 	h.linkService.TrackClickAsync(event)
 
-	// Resposta 302 imediata sem alocação de corpo HTML (sem cache no navegador para contabilizar todo clique)
 	w.Header().Set("Location", originalURL)
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusFound)

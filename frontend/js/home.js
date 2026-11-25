@@ -86,7 +86,6 @@ function saveToHistory(link) {
   try {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
   } catch {
-    // Ignora falha de quota
   }
 }
 

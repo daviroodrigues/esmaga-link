@@ -44,7 +44,6 @@ func (r *TokenRepository) InvalidatePendingAuthTokens(ctx context.Context, userI
 	return nil
 }
 
-// ConsumeAuthToken marca atomicamente um token válido como usado e o retorna.
 func (r *TokenRepository) ConsumeAuthToken(ctx context.Context, tokenHash, purpose string) (*domain.AuthToken, error) {
 	const query = `
 		UPDATE auth_tokens

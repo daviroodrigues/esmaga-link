@@ -24,7 +24,7 @@ type EditLinkRequest struct {
 }
 
 type DeleteAccountRequest struct {
-	KeepLinksActive bool `json:"keep_links_active"` // default true: torna anônimo e imutável
+	KeepLinksActive bool `json:"keep_links_active"`
 }
 
 type LinkAnalytics struct {

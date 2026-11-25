@@ -70,7 +70,6 @@ func declareNotificationsTopology(ch *amqp.Channel) error {
 	return nil
 }
 
-// PublishEmail publica uma solicitação de envio de e-mail na exchange notifications.topic.
 func (p *Publisher) PublishEmail(ctx context.Context, routingKey string, msg *domain.EmailMessage) error {
 	data, err := json.Marshal(msg)
 	if err != nil {
@@ -95,7 +94,6 @@ func (p *Publisher) PublishEmail(ctx context.Context, routingKey string, msg *do
 	)
 }
 
-// EmailConsumer consome eventos de e-mail com retry exponencial e DLQ.
 type EmailConsumer struct {
 	conn    *amqp.Connection
 	channel *amqp.Channel
@@ -126,7 +124,7 @@ func (c *EmailConsumer) Consume(handler func(msg *domain.EmailMessage) error) er
 	msgs, err := c.channel.Consume(
 		QueueEmail,
 		"",
-		false, // manual ack
+		false,
 		false,
 		false,
 		false,
@@ -159,7 +157,7 @@ func (c *EmailConsumer) handleFailure(d amqp.Delivery, cause error) {
 	retries := extractRetryCount(d.Headers)
 	if retries >= len(emailRetryDelays) {
 		log.Printf("[Email Worker] Limite de tentativas atingido (%d), movendo para DLQ: %v", retries, cause)
-		_ = d.Nack(false, false) // vai para notifications.dlx -> email.dlq
+		_ = d.Nack(false, false)
 		return
 	}
 
@@ -174,9 +172,6 @@ func (c *EmailConsumer) handleFailure(d amqp.Delivery, cause error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// Publica na fila de retry com Expiration; ao expirar, o DLX devolve para notifications.topic.
-	// Nota: para preservar a routing key original ao voltar, definimos x-dead-letter-routing-key na fila ou
-	// publicamos com routing key original após TTL via ExchangeNotifications.
 	err := c.channel.PublishWithContext(
 		ctx,
 		ExchangeDLX,

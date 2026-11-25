@@ -16,12 +16,10 @@ import (
 	"github.com/daviroodrigues/esmaga-api/internal/config"
 )
 
-// Sender define a interface agnóstica para envio de e-mails transacionais.
 type Sender interface {
 	Send(ctx context.Context, to, subject, htmlBody, textBody string) error
 }
 
-// NewSender cria um Sender SMTP configurado exclusivamente pelas variáveis de ambiente.
 func NewSender(cfg *config.Config) (Sender, error) {
 	host := strings.TrimSpace(cfg.SMTPHost)
 	if host == "" {
@@ -46,7 +44,6 @@ func NewSender(cfg *config.Config) (Sender, error) {
 	}, nil
 }
 
-// SMTPSender envia e-mails via SMTP padrão (compatível com Mailpit, SES, Resend SMTP, Brevo, etc.).
 type SMTPSender struct {
 	host    string
 	port    string

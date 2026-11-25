@@ -9,7 +9,6 @@ import (
 
 const DefaultAlphabet = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
-// ShuffleAlphabet embaralha deterministicamente o alfabeto padrão usando algoritmo Fisher-Yates e uma seed.
 func ShuffleAlphabet(seed string) string {
 	if seed == "" {
 		return DefaultAlphabet
@@ -30,14 +29,12 @@ func ShuffleAlphabet(seed string) string {
 	return string(chars)
 }
 
-// Base62Encoder cuida da codificação e decodificação usando um alfabeto customizado/embaralhado.
 type Base62Encoder struct {
-	alphabet    string
-	charIndex   map[byte]uint64
-	minPadLen   int
+	alphabet  string
+	charIndex map[byte]uint64
+	minPadLen int
 }
 
-// NewBase62Encoder cria um novo codificador. Se o alfabeto estiver vazio, usa o padrão.
 func NewBase62Encoder(alphabet string, minPadLen int) (*Base62Encoder, error) {
 	if alphabet == "" {
 		alphabet = DefaultAlphabet
@@ -62,18 +59,15 @@ func NewBase62Encoder(alphabet string, minPadLen int) (*Base62Encoder, error) {
 	}, nil
 }
 
-// NewBase62EncoderWithSeed cria o encoder embaralhando o alfabeto a partir de uma seed informada no ambiente.
 func NewBase62EncoderWithSeed(seed string, minPadLen int) (*Base62Encoder, error) {
 	alphabet := ShuffleAlphabet(seed)
 	return NewBase62Encoder(alphabet, minPadLen)
 }
 
-// Encode converte um uint64 em string Base62 usando o padding padrão do encoder.
 func (b *Base62Encoder) Encode(num uint64) string {
 	return b.EncodeWithPad(num, b.minPadLen)
 }
 
-// EncodeWithPad converte um uint64 em string Base62 com comprimento mínimo explícito.
 func (b *Base62Encoder) EncodeWithPad(num uint64, minPadLen int) string {
 	if num == 0 {
 		pad := string(b.alphabet[0])
@@ -93,7 +87,7 @@ func (b *Base62Encoder) EncodeWithPad(num uint64, minPadLen int) string {
 	}
 
 	runes := []byte(sb.String())
-	// Inverter a ordem para MSB à esquerda
+
 	for i, j := 0, len(runes)-1; i < j; i, j = i+1, j-1 {
 		runes[i], runes[j] = runes[j], runes[i]
 	}
@@ -107,7 +101,6 @@ func (b *Base62Encoder) EncodeWithPad(num uint64, minPadLen int) string {
 	return encoded
 }
 
-// Decode converte uma string Base62 de volta para uint64.
 func (b *Base62Encoder) Decode(str string) (uint64, error) {
 	if len(str) == 0 {
 		return 0, errors.New("string vazia")

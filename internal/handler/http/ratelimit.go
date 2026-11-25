@@ -19,7 +19,6 @@ func NewRateLimiter(client *redis.Client) *RateLimiter {
 	return &RateLimiter{client: client}
 }
 
-// Limit cria um middleware que limita o número de requisições por IP ou por usuário autenticado
 func (rl *RateLimiter) Limit(scope string, maxRequests int64, window time.Duration) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -28,21 +27,19 @@ func (rl *RateLimiter) Limit(scope string, maxRequests int64, window time.Durati
 				identifier = "user:" + claims.UserID.String()
 			}
 
-			// Chave baseada na janela de tempo atual
 			windowBucket := time.Now().Unix() / int64(window.Seconds())
 			key := fmt.Sprintf("esmaga:ratelimit:%s:%s:%d", scope, identifier, windowBucket)
 
 			ctx, cancel := context.WithTimeout(r.Context(), 1*time.Second)
 			defer cancel()
 
-			// Incrementa o contador atômico no Redis
 			pipe := rl.client.Pipeline()
 			incrCmd := pipe.Incr(ctx, key)
 			pipe.Expire(ctx, key, window*2)
 			_, err := pipe.Exec(ctx)
 
 			if err != nil {
-				// Falha suave caso o Redis falhe: permite a requisição e loga
+
 				next.ServeHTTP(w, r)
 				return
 			}

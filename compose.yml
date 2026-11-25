@@ -1,7 +1,4 @@
 services:
-  # ==========================================
-  # INFRAESTRUTURA DE DADOS E MENSAGERIA
-  # ==========================================
 
   postgres:
     image: postgres:16-alpine
@@ -80,10 +77,6 @@ services:
       retries: 5
       start_period: 20s
 
-  # ==========================================
-  # SERVIÇOS DE APLICAÇÃO GO
-  # ==========================================
-
   api:
     build:
       context: .
@@ -144,10 +137,6 @@ services:
         condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
-
-  # ==========================================
-  # REVERSE PROXY (NGINX)
-  # ==========================================
 
   nginx:
     image: nginx:alpine

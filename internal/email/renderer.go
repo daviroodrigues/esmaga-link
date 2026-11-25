@@ -10,7 +10,6 @@ import (
 	"github.com/daviroodrigues/esmaga-api/internal/domain"
 )
 
-// TemplateStore abstrai a leitura dos templates de e-mail persistidos no banco.
 type TemplateStore interface {
 	GetBySlug(ctx context.Context, slug string) (*domain.EmailTemplate, error)
 }
@@ -92,7 +91,6 @@ Se você optou por manter seus links ativos, eles continuam funcionando de forma
 	},
 }
 
-// DefaultTemplates retorna os templates padrão para seed inicial no PostgreSQL.
 func DefaultTemplates() ([]domain.EmailTemplate, error) {
 	out := make([]domain.EmailTemplate, len(defaultTemplatesList))
 	copy(out, defaultTemplatesList)

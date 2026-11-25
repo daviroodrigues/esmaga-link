@@ -59,7 +59,7 @@ func NewLinkService(
 }
 
 func (s *LinkService) CreateLink(ctx context.Context, originalURL string, userID *uuid.UUID) (*domain.Link, error) {
-	// Proteção contra SSRF e verificação de integridade da URL
+
 	if s.validator != nil {
 		if err := s.validator.ValidateDestination(originalURL); err != nil {
 			return nil, err
@@ -71,7 +71,6 @@ func (s *LinkService) CreateLink(ctx context.Context, originalURL string, userID
 		}
 	}
 
-	// Geração com tolerância a colisões (IF NOT EXISTS no Cassandra)
 	var link *domain.Link
 	maxAttempts := 3
 
@@ -95,7 +94,7 @@ func (s *LinkService) CreateLink(ctx context.Context, originalURL string, userID
 		}
 
 		if errors.Is(err, cassandra.ErrCodeCollision) {
-			// Colisão detectada pelo Cassandra (LWT Paxos), tenta o próximo ID
+
 			if attempt == maxAttempts-1 {
 				return nil, errors.New("limite de tentativas excedido ao resolver colisão de link")
 			}
@@ -105,7 +104,6 @@ func (s *LinkService) CreateLink(ctx context.Context, originalURL string, userID
 		return nil, fmt.Errorf("erro ao salvar link: %w", err)
 	}
 
-	// Pré-aquece L1 (memória) e L2 (Redis)
 	if s.l1Cache != nil {
 		s.l1Cache.Set(link.ShortCode, originalURL, l1CacheTTL)
 	}
@@ -114,10 +112,6 @@ func (s *LinkService) CreateLink(ctx context.Context, originalURL string, userID
 	return link, nil
 }
 
-// GetLinkByCode implementa o caminho crítico (SLO < 15ms):
-// 1. Tenta Cache L1 em memória
-// 2. Tenta Cache L2 no Redis
-// 3. Se miss, busca Cassandra e popula L1 + Redis (assíncrono)
 func (s *LinkService) GetLinkByCode(ctx context.Context, shortCode string) (string, error) {
 	if s.l1Cache != nil {
 		if cachedURL, ok := s.l1Cache.Get(shortCode); ok {
@@ -133,7 +127,6 @@ func (s *LinkService) GetLinkByCode(ctx context.Context, shortCode string) (stri
 		return cachedURL, nil
 	}
 
-	// Cache Miss -> Cassandra
 	link, err := s.linkRepo.GetByCode(ctx, shortCode)
 	if err != nil {
 		return "", err
@@ -146,7 +139,6 @@ func (s *LinkService) GetLinkByCode(ctx context.Context, shortCode string) (stri
 		s.l1Cache.Set(shortCode, link.OriginalURL, l1CacheTTL)
 	}
 
-	// Popula Redis em background para não atrasar a resposta 302
 	go func(code, targetURL string) {
 		bgCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
@@ -186,22 +178,18 @@ func (s *LinkService) EditLink(ctx context.Context, shortCode string, userID uui
 		return ErrLinkNotFound
 	}
 
-	// Links anônimos são imutáveis
 	if link.UserID == nil {
 		return ErrLinkImmutable
 	}
 
-	// Apenas o dono pode editar
 	if *link.UserID != userID {
 		return ErrUnauthorizedLink
 	}
 
-	// Atualiza Cassandra
 	if err := s.linkRepo.UpdateURL(ctx, shortCode, userID, newURL); err != nil {
 		return err
 	}
 
-	// Invalida cache L1, Redis e notifica demais réplicas
 	s.invalidateCache(ctx, shortCode)
 
 	return nil
@@ -240,7 +228,6 @@ func (s *LinkService) DeleteLink(ctx context.Context, shortCode string, userID u
 	return nil
 }
 
-// StartCacheInvalidationListener escuta eventos de invalidação do Redis Pub/Sub e limpa o cache L1 local.
 func (s *LinkService) StartCacheInvalidationListener(ctx context.Context) {
 	if s.cacheRepo == nil || s.l1Cache == nil {
 		return
@@ -282,12 +269,12 @@ func (s *LinkService) ListUserLinks(ctx context.Context, userID uuid.UUID) ([]*d
 
 func (s *LinkService) DeleteAccount(ctx context.Context, userID uuid.UUID, keepLinksActive bool) error {
 	if keepLinksActive {
-		// Boa prática: Torna os links anônimos e imutáveis para não quebrar a web
+
 		if err := s.linkRepo.AnonymizeUserLinks(ctx, userID); err != nil {
 			return err
 		}
 	} else {
-		// Desativa e invalida cache
+
 		codes, err := s.linkRepo.DeactivateUserLinks(ctx, userID)
 		if err != nil {
 			return err
@@ -297,7 +284,6 @@ func (s *LinkService) DeleteAccount(ctx context.Context, userID uuid.UUID, keepL
 		}
 	}
 
-	// Deleta usuário do PostgreSQL
 	return s.authService.DeleteUser(ctx, userID)
 }
 

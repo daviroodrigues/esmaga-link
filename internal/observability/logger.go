@@ -21,7 +21,6 @@ const (
 	ansiMag    = "\033[35m"
 )
 
-// prettyColorHandler formata logs estruturados do log/slog no estilo ConsoleWriter do zerolog.
 type prettyColorHandler struct {
 	mu     *sync.Mutex
 	out    io.Writer
@@ -149,7 +148,6 @@ func writeAttr(buf *bytes.Buffer, groups []string, a slog.Attr) {
 	buf.WriteString(fmt.Sprint(a.Value.Any()))
 }
 
-// InitLogger configura o logger padrão estruturado com cores no estilo zerolog.
 func InitLogger(serviceName, instanceID string) {
 	handler := newPrettyColorHandler(os.Stdout, slog.LevelInfo).WithAttrs([]slog.Attr{
 		slog.String("service", serviceName),

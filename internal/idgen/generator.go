@@ -12,32 +12,28 @@ import (
 )
 
 const (
-	// DefaultUniverseSize62_5 representa o universo de 62^5 códigos (~916 milhões)
 	DefaultUniverseSize62_5 uint64 = 916132832
-	DefaultHullDobellA5     uint64 = 566165401 // (A - 1) % 124 == 0
-	DefaultHullDobellC5     uint64 = 271828183 // coprimo com 62^5
+	DefaultHullDobellA5     uint64 = 566165401
+	DefaultHullDobellC5     uint64 = 271828183
 
-	// DefaultUniverseSize62_6 representa o universo de 62^6 códigos (~56.8 bilhões)
 	DefaultUniverseSize62_6 uint64 = 56800235584
-	// DefaultHullDobellA é o multiplicador ajustado para satisfazer (A - 1) % 124 == 0
+
 	DefaultHullDobellA uint64 = 3141592701
-	// DefaultHullDobellC é o incremento coprimo com 62^6
+
 	DefaultHullDobellC uint64 = 2718281829
 
-	// DefaultUniverseSize62_7 representa o universo de 62^7 códigos (~3.52 trilhões)
 	DefaultUniverseSize62_7 uint64 = 3521614606208
-	DefaultHullDobellA7     uint64 = 2176510000001 // (A - 1) % 124 == 0
-	DefaultHullDobellC7     uint64 = 1414213562373 // coprimo com 62^7
+	DefaultHullDobellA7     uint64 = 2176510000001
+	DefaultHullDobellC7     uint64 = 1414213562373
 )
 
-// EraConfig define os parâmetros matemáticos de uma Era
 type EraConfig struct {
-	CodeLength int    // Comprimento fixo dos códigos nesta era (ex: 5, 6, 7)
+	CodeLength int
 	EraStart   uint64
 	EraSize    uint64
-	Multiplier uint64 // Número coprimo com EraSize ou multiplicador A do LCG
-	Increment  uint64 // Incremento C do LCG (quando > 0, ativa salto caótico Hull-Dobell)
-	Seed       uint64 // Semente inicial do LCG (X_0)
+	Multiplier uint64
+	Increment  uint64
+	Seed       uint64
 }
 
 func newHullDobellEra(codeLength int, size, a, c uint64) (EraConfig, error) {
@@ -55,22 +51,18 @@ func newHullDobellEra(codeLength int, size, a, c uint64) (EraConfig, error) {
 	return era, nil
 }
 
-// DefaultEra5Chars cria a Era inicial para códigos de 5 caracteres (~916 milhões de links).
 func DefaultEra5Chars() (EraConfig, error) {
 	return newHullDobellEra(5, DefaultUniverseSize62_5, DefaultHullDobellA5, DefaultHullDobellC5)
 }
 
-// DefaultEra6Chars cria a Era para códigos de 6 caracteres (~56.8 bilhões de links).
 func DefaultEra6Chars() (EraConfig, error) {
 	return newHullDobellEra(6, DefaultUniverseSize62_6, DefaultHullDobellA, DefaultHullDobellC)
 }
 
-// DefaultEra7Chars cria a Era para códigos de 7 caracteres (~3.52 trilhões de links).
 func DefaultEra7Chars() (EraConfig, error) {
 	return newHullDobellEra(7, DefaultUniverseSize62_7, DefaultHullDobellA7, DefaultHullDobellC7)
 }
 
-// DefaultEras retorna a progressão padrão de eras: 5 → 6 → 7 caracteres.
 func DefaultEras() ([]EraConfig, error) {
 	e5, err := DefaultEra5Chars()
 	if err != nil {
@@ -87,7 +79,6 @@ func DefaultEras() ([]EraConfig, error) {
 	return []EraConfig{e5, e6, e7}, nil
 }
 
-// Obfuscate aplica a transformação bijetora (LCG caótico Hull-Dobell se Increment > 0, ou Fibonacci Hashing).
 func (e EraConfig) Obfuscate(seqID uint64) uint64 {
 	if e.EraSize == 0 {
 		return seqID + e.EraStart
@@ -101,7 +92,6 @@ func (e EraConfig) Obfuscate(seqID uint64) uint64 {
 	return val + e.EraStart
 }
 
-// lcgNth calcula o n-ésimo estado do LCG T^n(seed) onde T(x) = (a*x + c) mod m em tempo O(log n).
 func lcgNth(seed, a, c, m, n uint64) uint64 {
 	if m == 0 {
 		return 0
@@ -128,7 +118,6 @@ func lcgNth(seed, a, c, m, n uint64) uint64 {
 	return (mulMod(resK, seed, m) + resB) % m
 }
 
-// mulMod calcula (a * b) % m evitando overflow em uint64 usando aritmética de 128 bits.
 func mulMod(a, b, m uint64) uint64 {
 	if m == 0 {
 		return 0
@@ -140,13 +129,11 @@ func mulMod(a, b, m uint64) uint64 {
 	return rem
 }
 
-// CheckpointStorage define a interface para persistência do teto de IDs em armazenamento durável (SSOT)
 type CheckpointStorage interface {
 	GetCheckpoint(ctx context.Context, sequenceName string) (int64, error)
 	SaveCheckpoint(ctx context.Context, sequenceName string, allocatedID int64) error
 }
 
-// IDGenerator coordena a reserva de IDs em lote no Redis, aleatorização intralote e a geração do short_code
 type IDGenerator struct {
 	mu        sync.Mutex
 	redis     *redis.Client
@@ -159,7 +146,6 @@ type IDGenerator struct {
 	storage   CheckpointStorage
 }
 
-// NewIDGenerator instancia o gerador com uma única Era, alocação em bloco e aleatorização intralote.
 func NewIDGenerator(
 	rdb *redis.Client,
 	redisKey string,
@@ -171,7 +157,6 @@ func NewIDGenerator(
 	return NewMultiEraIDGenerator(rdb, redisKey, batchSize, []EraConfig{era}, encoder, storage)
 }
 
-// NewMultiEraIDGenerator instancia o gerador com progressão automática entre múltiplas Eras (ex: 5 → 6 → 7).
 func NewMultiEraIDGenerator(
 	rdb *redis.Client,
 	redisKey string,
@@ -213,8 +198,6 @@ func NewMultiEraIDGenerator(
 	}, nil
 }
 
-// prepareBatch preenche o lote com os IDs sequenciais [startID, startID+batchSize-1]
-// e aplica Fisher-Yates shuffle para aleatorizar a ordem dentro do lote antes da ofuscação.
 func (g *IDGenerator) prepareBatch(startID uint64) {
 	g.batch = g.batch[:cap(g.batch)]
 	if uint64(len(g.batch)) != g.batchSize {
@@ -229,7 +212,6 @@ func (g *IDGenerator) prepareBatch(startID uint64) {
 	g.batchIdx = 0
 }
 
-// InitOrRecover sincroniza o Redis com a Storage durável (Cassandra) em caso de reinicialização ou desastre
 func (g *IDGenerator) InitOrRecover(ctx context.Context) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -249,8 +231,7 @@ func (g *IDGenerator) InitOrRecover(ctx context.Context) error {
 	}
 
 	if exists == 0 {
-		// Pior caso: Redis subiu vazio (perda de volume / primeiro boot).
-		// Aplica margem de segurança (+ 2 lotes) para garantir que nenhum ID em trânsito colida
+
 		safeStart := checkpoint + int64(g.batchSize*2)
 		if err := g.redis.Set(ctx, g.redisKey, safeStart, 0).Err(); err != nil {
 			return fmt.Errorf("falha ao inicializar chave no redis: %w", err)
@@ -259,7 +240,7 @@ func (g *IDGenerator) InitOrRecover(ctx context.Context) error {
 			return fmt.Errorf("falha ao persistir checkpoint de recuperação no cassandra: %w", err)
 		}
 	} else {
-		// Redis já possui a chave; se o valor for maior que o checkpoint, atualiza o Cassandra
+
 		val, err := g.redis.Get(ctx, g.redisKey).Int64()
 		if err == nil && val > checkpoint {
 			_ = g.storage.SaveCheckpoint(ctx, g.redisKey, val)
@@ -269,12 +250,10 @@ func (g *IDGenerator) InitOrRecover(ctx context.Context) error {
 	return nil
 }
 
-// NextID obtém o próximo código Base62 único e ofuscado de forma thread-safe
 func (g *IDGenerator) NextID(ctx context.Context) (string, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	// Se o lote local esgotou, reserva um novo lote no Redis e aleatoriza os IDs internamente
 	if g.batchIdx >= len(g.batch) {
 		newMax, err := g.redis.IncrBy(ctx, g.redisKey, int64(g.batchSize)).Result()
 		if err != nil {
@@ -284,7 +263,6 @@ func (g *IDGenerator) NextID(ctx context.Context) (string, error) {
 		startID := uint64(newMax) - g.batchSize + 1
 		g.prepareBatch(startID)
 
-		// Checkpoint durável no Cassandra (SSOT)
 		if g.storage != nil {
 			_ = g.storage.SaveCheckpoint(ctx, g.redisKey, newMax)
 		}
@@ -296,7 +274,6 @@ func (g *IDGenerator) NextID(ctx context.Context) (string, error) {
 	return g.encodeSeqID(seqID), nil
 }
 
-// encodeSeqID resolve a Era correspondente ao seqID (1-based), ofusca e codifica com o padding da Era.
 func (g *IDGenerator) encodeSeqID(seqID uint64) string {
 	remaining := seqID
 	if remaining > 0 {

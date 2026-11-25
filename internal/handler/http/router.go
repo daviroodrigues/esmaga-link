@@ -66,7 +66,6 @@ func NewRouter(
 	r := chi.NewRouter()
 	r.Use(middleware.Recoverer)
 
-	// Hot Path: redirecionamento 302 com overhead mínimo (sem Logger síncrono nem CORS)
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RealIP)
 		r.Get("/r/{code}", func(w http.ResponseWriter, req *http.Request) {
@@ -77,7 +76,6 @@ func NewRouter(
 		})
 	})
 
-	// Demais rotas com middlewares completos
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RequestID)
 		r.Use(middleware.RealIP)
@@ -95,16 +93,13 @@ func NewRouter(
 			MaxAge:           300,
 		}))
 
-		// Health check e métricas Prometheus
 		r.Get("/healthz", healthzHandler(instanceID))
 		if metrics != nil {
 			r.Get("/metrics", metrics.Handler())
 		}
 
-		// Documentação Swagger
 		r.Get("/swagger/*", httpSwagger.WrapHandler)
 
-		// API v1
 		r.Route("/api/v1", func(r chi.Router) {
 			r.Get("/config", func(w http.ResponseWriter, r *http.Request) {
 				writeJSON(w, http.StatusOK, PublicConfigResponse{
@@ -112,7 +107,6 @@ func NewRouter(
 				})
 			})
 
-			// Rotas de Autenticação
 			r.Route("/auth", func(r chi.Router) {
 				r.Group(func(r chi.Router) {
 					if rateLimiter != nil {
@@ -140,9 +134,8 @@ func NewRouter(
 				})
 			})
 
-			// Rotas de Links
 			r.Route("/links", func(r chi.Router) {
-				// Criação aceita usuário anônimo ou autenticado
+
 				r.Group(func(r chi.Router) {
 					r.Use(OptionalAuthMiddleware(authService))
 					if rateLimiter != nil {
@@ -151,7 +144,6 @@ func NewRouter(
 					r.Post("/", linkHandler.Create)
 				})
 
-				// Rotas autenticadas
 				r.Group(func(r chi.Router) {
 					r.Use(AuthRequiredMiddleware(authService))
 					r.Get("/", linkHandler.ListMyLinks)

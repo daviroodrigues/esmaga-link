@@ -43,7 +43,6 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// 1. Conexão com PostgreSQL
 	pgPool, err := pgxpool.New(ctx, cfg.PostgresURL)
 	if err != nil {
 		log.Fatalf("Falha ao conectar no PostgreSQL: %v", err)
@@ -56,7 +55,6 @@ func main() {
 		log.Printf("[%s] Conectado ao PostgreSQL com sucesso.", cfg.InstanceID)
 	}
 
-	// 2. Conexão com Cassandra
 	cassHosts := strings.Split(cfg.CassandraHosts, ",")
 	cluster := gocql.NewCluster(cassHosts...)
 	cluster.Keyspace = cfg.CassandraKeyspace
@@ -71,7 +69,6 @@ func main() {
 	defer cassSession.Close()
 	log.Printf("[%s] Conectado ao Cassandra com sucesso.", cfg.InstanceID)
 
-	// 3. Conexão com Redis
 	rdb := redis.NewClient(&redis.Options{
 		Addr:         cfg.RedisAddr,
 		Password:     cfg.RedisPassword,
@@ -84,7 +81,6 @@ func main() {
 	}
 	log.Printf("[%s] Conectado ao Redis com sucesso.", cfg.InstanceID)
 
-	// 4. Conexão com RabbitMQ Publisher
 	publisher, err := rabbitmq.NewPublisher(cfg.RabbitMQURL)
 	if err != nil {
 		log.Printf("Aviso: Falha ao conectar RabbitMQ Publisher (%v). Ingestão assíncrona desabilitada.", err)
@@ -93,14 +89,12 @@ func main() {
 		log.Printf("[%s] Conectado ao RabbitMQ Publisher.", cfg.InstanceID)
 	}
 
-	// 5. Injeção de Repositórios Básicos
 	userRepository := pgRepo.NewUserRepository(pgPool)
 	tokenRepository := pgRepo.NewTokenRepository(pgPool)
 	linkRepository := cassRepo.NewLinkRepository(cassSession)
 	cacheRepository := redisRepo.NewCacheRepository(rdb)
 	urlValidator := security.NewURLValidator(nil)
 
-	// 6. Inicialização do Motor de IDs com SSOT no Cassandra (Eras: 5 → 6 → 7)
 	base62Enc, err := idgen.NewBase62EncoderWithSeed(cfg.AlphabetSeed, 5)
 	if err != nil {
 		log.Fatalf("Falha ao inicializar Base62 encoder: %v", err)
@@ -116,14 +110,12 @@ func main() {
 		log.Fatalf("Falha ao criar IDGenerator: %v", err)
 	}
 
-	// Sincroniza / recupera estado com Cassandra caso o Redis tenha reiniciado sem volume
 	if err := idGenerator.InitOrRecover(ctx); err != nil {
 		log.Printf("Aviso: Falha ao executar InitOrRecover do IDGenerator: %v", err)
 	} else {
 		log.Printf("[%s] Motor de IDs sincronizado com sucesso com o Cassandra (SSOT).", cfg.InstanceID)
 	}
 
-	// 7. Injeção de Serviços e Handlers
 	authService := service.NewAuthService(userRepository, tokenRepository, publisher, cfg.JWTSecret, cfg.AppBaseURL)
 	linkService := service.NewLinkService(idGenerator, linkRepository, cacheRepository, publisher, authService, urlValidator)
 	go linkService.StartCacheInvalidationListener(ctx)
@@ -145,7 +137,6 @@ func main() {
 		IdleTimeout:  120 * time.Second,
 	}
 
-	// Graceful Shutdown
 	go func() {
 		sigChan := make(chan os.Signal, 1)
 		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)

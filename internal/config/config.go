@@ -6,25 +6,25 @@ import (
 )
 
 type Config struct {
-	Port            string
-	InstanceID      string
-	PostgresURL     string
-	CassandraHosts  string
-	CassandraKeyspace string
-	RedisAddr       string
-	RedisPassword   string
-	RabbitMQURL     string
-	JWTSecret       string
-	AlphabetSeed    string
-	IDBatchSize     uint64
-	AppBaseURL      string
-	SMTPHost        string
-	SMTPPort        string
-	SMTPUser        string
-	SMTPPass        string
-	SMTPFrom          string
-	SMTPTLS           string
-	TurnstileSiteKey  string
+	Port               string
+	InstanceID         string
+	PostgresURL        string
+	CassandraHosts     string
+	CassandraKeyspace  string
+	RedisAddr          string
+	RedisPassword      string
+	RabbitMQURL        string
+	JWTSecret          string
+	AlphabetSeed       string
+	IDBatchSize        uint64
+	AppBaseURL         string
+	SMTPHost           string
+	SMTPPort           string
+	SMTPUser           string
+	SMTPPass           string
+	SMTPFrom           string
+	SMTPTLS            string
+	TurnstileSiteKey   string
 	TurnstileSecretKey string
 }
 

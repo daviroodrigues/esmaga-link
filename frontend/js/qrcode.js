@@ -1,8 +1,3 @@
-/**
- * Wrapper para geração de QR Code em <canvas> e exportação PNG com margem.
- * Requer window.QRCode carregado via CDN (qrcode@1.5.1).
- */
-
 export async function renderQRCode(canvas, url, size = 180) {
   if (!canvas || typeof window.QRCode === 'undefined') {
     return;

@@ -15,7 +15,6 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-// Metrics coleta métricas HTTP e de runtime no formato de exposição do Prometheus.
 type Metrics struct {
 	mu             sync.RWMutex
 	requestsTotal  map[string]*atomic.Int64
@@ -59,7 +58,6 @@ func (m *Metrics) ObserveHTTP(method, routePattern string, status int, d time.Du
 	m.durationCount.Add(1)
 }
 
-// HTTPMiddleware registra logs estruturados com request_id e alimenta as métricas Prometheus.
 func (m *Metrics) HTTPMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -96,7 +94,6 @@ func (m *Metrics) HTTPMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// Handler expõe /metrics no formato texto padrão do Prometheus (v0.0.4).
 func (m *Metrics) Handler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var mem runtime.MemStats

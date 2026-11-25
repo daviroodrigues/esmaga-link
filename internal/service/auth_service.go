@@ -134,7 +134,7 @@ func (s *AuthService) ResendVerification(ctx context.Context, email string) erro
 	if err != nil {
 		return err
 	}
-	// Evita enumeração de contas inexistentes
+
 	if user == nil {
 		return nil
 	}
@@ -212,7 +212,7 @@ func (s *AuthService) ForgotPassword(ctx context.Context, email string) error {
 	if err != nil {
 		return err
 	}
-	// Sempre retorna sucesso para evitar enumeração de e-mails
+
 	if user == nil || user.Status == domain.UserStatusSuspended {
 		return nil
 	}

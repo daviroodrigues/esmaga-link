@@ -36,7 +36,6 @@ const logoutBtn = document.getElementById('logout-btn');
 const deleteAccOpenBtn = document.getElementById('delete-account-open-btn');
 const toastEl = document.getElementById('toast');
 
-// Auth elements
 const authSection = document.getElementById('auth-section');
 const appSection = document.getElementById('app-section');
 const tabLogin = document.getElementById('tab-login');
@@ -59,7 +58,6 @@ const pendingEmailLabel = document.getElementById('pending-email-label');
 const pendingBackBtn = document.getElementById('pending-back-btn');
 const pendingResendBtn = document.getElementById('pending-resend-btn');
 
-// Create & list elements
 const createForm = document.getElementById('dash-create-form');
 const createUrlInput = document.getElementById('dash-url-input');
 const createBtn = document.getElementById('dash-create-btn');
@@ -69,7 +67,6 @@ const linksEmpty = document.getElementById('links-empty');
 const linksTableWrap = document.getElementById('links-table-wrap');
 const linksTbody = document.getElementById('links-tbody');
 
-// Stats elements
 const statsSection = document.getElementById('stats-section');
 const statsCodeLabel = document.getElementById('stats-code-label');
 const statsDaysSelect = document.getElementById('stats-days-select');
@@ -80,7 +77,6 @@ const devicesCanvas = document.getElementById('chart-devices');
 const referrersList = document.getElementById('stats-referrers');
 const countriesList = document.getElementById('stats-countries');
 
-// Modals
 const editModal = document.getElementById('edit-modal');
 const editForm = document.getElementById('edit-form');
 const editCodeLabel = document.getElementById('edit-code-label');

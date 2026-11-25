@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Rotina automatizada de backup (PostgreSQL + snapshot do Cassandra).
-# Exemplo de uso no cron (diário às 03:00):
-#   0 3 * * * /caminho/para/esmaga-link/deployments/scripts/backup.sh >> /var/log/esmaga-backup.log 2>&1
-
 BACKUP_DIR="${BACKUP_DIR:-./backups}"
 RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-7}"
 POSTGRES_CONTAINER="${POSTGRES_CONTAINER:-esmaga-postgres}"

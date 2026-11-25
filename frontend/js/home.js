@@ -1,5 +1,6 @@
 import { createLink } from './api.js';
 import { downloadQRCodePNG, renderQRCode } from './qrcode.js';
+import { mountTurnstile } from './turnstile.js';
 import {
   buildShortUrl,
   clearElement,
@@ -31,11 +32,16 @@ const historySection = document.getElementById('history-section');
 const historyTbody = document.getElementById('history-tbody');
 const clearHistoryBtn = document.getElementById('clear-history-btn');
 const toastEl = document.getElementById('toast');
+const turnstileContainer = document.getElementById('home-turnstile');
 
 let lastShortUrl = '';
 let lastShortCode = '';
+let turnstileCtrl = { enabled: false, getToken: () => '', reset: () => {} };
 
 initThemeToggle(themeBtn);
+mountTurnstile(turnstileContainer).then((ctrl) => {
+  turnstileCtrl = ctrl;
+});
 
 function setError(message) {
   if (!message) {
@@ -153,13 +159,15 @@ form.addEventListener('submit', async (event) => {
   shortenBtn.textContent = 'Encurtando...';
 
   try {
-    const link = await createLink(rawUrl);
+    const link = await createLink(rawUrl, turnstileCtrl.getToken());
     await showResult(link);
     saveToHistory(link);
     renderHistory();
     urlInput.value = '';
+    turnstileCtrl.reset();
   } catch (err) {
     setError(err.message || 'Erro ao encurtar URL.');
+    turnstileCtrl.reset();
   } finally {
     shortenBtn.disabled = false;
     shortenBtn.textContent = 'Esmagar';

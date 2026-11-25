@@ -24,6 +24,7 @@
           </svg>
         </button>
         <a href="/" class="btn btn-secondary btn-sm">Encurtador Público</a>
+        <button id="account-open-btn" class="btn btn-secondary btn-sm" type="button" hidden>Minha Conta</button>
         <button id="delete-account-open-btn" class="btn btn-danger btn-sm" type="button" hidden>Excluir Conta</button>
         <button id="logout-btn" class="btn btn-secondary btn-sm" type="button" hidden>Sair</button>
       </nav>
@@ -39,18 +40,58 @@
       </div>
 
       <div id="auth-error" class="alert alert-error" hidden></div>
+      <div id="auth-info" class="alert alert-info" hidden></div>
 
       <form id="auth-form" class="form-stack">
+        <div id="auth-name-field" class="field" hidden>
+          <label for="auth-name">Nome (opcional)</label>
+          <input id="auth-name" type="text" autocomplete="name" placeholder="Seu nome">
+        </div>
         <div class="field">
           <label for="auth-email">E-mail</label>
           <input id="auth-email" type="email" required autocomplete="email" placeholder="seu.nome@dominio.com">
         </div>
-        <div class="field">
+        <div id="auth-password-field" class="field">
           <label for="auth-password">Senha (mín. 6 caracteres)</label>
-          <input id="auth-password" type="password" required minlength="6" autocomplete="current-password" placeholder="••••••••">
+          <div class="password-wrap">
+            <input id="auth-password" type="password" required minlength="6" autocomplete="current-password" placeholder="••••••••">
+            <button class="password-toggle" type="button" data-toggle-password="auth-password" aria-label="Mostrar senha" title="Mostrar senha">
+              <svg data-eye="open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle>
+              </svg>
+              <svg data-eye="closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden>
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line>
+              </svg>
+            </button>
+          </div>
         </div>
+        <div id="auth-password-confirm-field" class="field" hidden>
+          <label for="auth-password-confirm">Confirmar senha</label>
+          <div class="password-wrap">
+            <input id="auth-password-confirm" type="password" minlength="6" autocomplete="new-password" placeholder="••••••••">
+            <button class="password-toggle" type="button" data-toggle-password="auth-password-confirm" aria-label="Mostrar senha" title="Mostrar senha">
+              <svg data-eye="open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle>
+              </svg>
+              <svg data-eye="closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden>
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div id="auth-turnstile" style="display:flex;justify-content:center;" hidden></div>
         <button id="auth-submit-btn" class="btn btn-primary" type="submit">Entrar</button>
+        <button id="forgot-toggle-btn" class="btn btn-secondary btn-sm" type="button">Esqueci minha senha</button>
       </form>
+
+      <div id="verify-pending-box" class="form-stack" hidden>
+        <h2 class="card-title">Verifique sua caixa de entrada</h2>
+        <p class="muted">Enviamos um link de confirmação para <strong id="pending-email-label"></strong>. Confirme seu e-mail para acessar sua conta.</p>
+        <div class="modal-actions">
+          <button id="pending-back-btn" class="btn btn-secondary" type="button">Voltar ao login</button>
+          <button id="pending-resend-btn" class="btn btn-primary" type="button">Reenviar e-mail</button>
+        </div>
+      </div>
     </section>
 
     <!-- Área Autenticada -->
@@ -163,6 +204,67 @@
         <button id="qr-close-btn" class="btn btn-secondary" type="button">Fechar</button>
         <button id="qr-download-btn" class="btn btn-primary" type="button">Baixar PNG</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Modal Minha Conta -->
+  <div id="account-modal" class="modal-backdrop" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="account-modal-title">
+      <h2 id="account-modal-title" class="card-title">Configurações da Conta</h2>
+      <p id="account-email-label" class="muted"></p>
+      <div id="account-error" class="alert alert-error" hidden></div>
+      <form id="account-form" class="form-stack">
+        <div class="field">
+          <label for="account-name-input">Nome</label>
+          <input id="account-name-input" type="text" autocomplete="name" placeholder="Seu nome">
+        </div>
+        <div class="field">
+          <label for="account-current-pass">Senha atual (para alterar senha)</label>
+          <div class="password-wrap">
+            <input id="account-current-pass" type="password" autocomplete="current-password" placeholder="••••••••">
+            <button class="password-toggle" type="button" data-toggle-password="account-current-pass" aria-label="Mostrar senha" title="Mostrar senha">
+              <svg data-eye="open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle>
+              </svg>
+              <svg data-eye="closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden>
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="account-new-pass">Nova senha (mín. 6 caracteres)</label>
+          <div class="password-wrap">
+            <input id="account-new-pass" type="password" minlength="6" autocomplete="new-password" placeholder="••••••••">
+            <button class="password-toggle" type="button" data-toggle-password="account-new-pass" aria-label="Mostrar senha" title="Mostrar senha">
+              <svg data-eye="open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle>
+              </svg>
+              <svg data-eye="closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden>
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="account-new-pass-confirm">Confirmar nova senha</label>
+          <div class="password-wrap">
+            <input id="account-new-pass-confirm" type="password" minlength="6" autocomplete="new-password" placeholder="••••••••">
+            <button class="password-toggle" type="button" data-toggle-password="account-new-pass-confirm" aria-label="Mostrar senha" title="Mostrar senha">
+              <svg data-eye="open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle>
+              </svg>
+              <svg data-eye="closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden>
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button id="account-cancel-btn" class="btn btn-secondary" type="button">Fechar</button>
+          <button id="account-save-btn" class="btn btn-primary" type="submit">Salvar Alterações</button>
+        </div>
+      </form>
     </div>
   </div>
 

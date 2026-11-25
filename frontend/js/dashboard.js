@@ -1,28 +1,37 @@
 import {
   createLink,
   deleteAccount,
+  deleteLink,
   editLink,
+  forgotPassword,
   getLinkStats,
+  getMe,
   hasSession,
   listMyLinks,
   login,
   logout,
   onUnauthorized,
   register,
+  resendVerification,
+  restoreSession,
+  updateMe,
 } from './api.js';
 import { downloadQRCodePNG, renderQRCode } from './qrcode.js';
+import { mountTurnstile } from './turnstile.js';
 import {
   buildShortUrl,
   clearElement,
   createSafeAnchor,
   el,
   formatDate,
+  initPasswordToggles,
   initThemeToggle,
   isSafeHttpUrl,
   showToast,
 } from './security.js';
 
 const themeBtn = document.getElementById('theme-toggle');
+const accountOpenBtn = document.getElementById('account-open-btn');
 const logoutBtn = document.getElementById('logout-btn');
 const deleteAccOpenBtn = document.getElementById('delete-account-open-btn');
 const toastEl = document.getElementById('toast');
@@ -33,10 +42,22 @@ const appSection = document.getElementById('app-section');
 const tabLogin = document.getElementById('tab-login');
 const tabRegister = document.getElementById('tab-register');
 const authForm = document.getElementById('auth-form');
+const authNameField = document.getElementById('auth-name-field');
+const authName = document.getElementById('auth-name');
 const authEmail = document.getElementById('auth-email');
+const authPasswordField = document.getElementById('auth-password-field');
 const authPassword = document.getElementById('auth-password');
+const authPasswordConfirmField = document.getElementById('auth-password-confirm-field');
+const authPasswordConfirm = document.getElementById('auth-password-confirm');
+const authTurnstileEl = document.getElementById('auth-turnstile');
 const authSubmitBtn = document.getElementById('auth-submit-btn');
+const forgotToggleBtn = document.getElementById('forgot-toggle-btn');
 const authError = document.getElementById('auth-error');
+const authInfo = document.getElementById('auth-info');
+const verifyPendingBox = document.getElementById('verify-pending-box');
+const pendingEmailLabel = document.getElementById('pending-email-label');
+const pendingBackBtn = document.getElementById('pending-back-btn');
+const pendingResendBtn = document.getElementById('pending-resend-btn');
 
 // Create & list elements
 const createForm = document.getElementById('dash-create-form');
@@ -79,7 +100,20 @@ const deleteError = document.getElementById('delete-error');
 const deleteCancelBtn = document.getElementById('delete-cancel-btn');
 const deleteConfirmBtn = document.getElementById('delete-confirm-btn');
 
+const accountModal = document.getElementById('account-modal');
+const accountEmailLabel = document.getElementById('account-email-label');
+const accountForm = document.getElementById('account-form');
+const accountNameInput = document.getElementById('account-name-input');
+const accountCurrentPass = document.getElementById('account-current-pass');
+const accountNewPass = document.getElementById('account-new-pass');
+const accountNewPassConfirm = document.getElementById('account-new-pass-confirm');
+const accountError = document.getElementById('account-error');
+const accountCancelBtn = document.getElementById('account-cancel-btn');
+const accountSaveBtn = document.getElementById('account-save-btn');
+
 let authMode = 'login';
+let pendingEmail = '';
+let authTurnstileCtrl = { enabled: false, getToken: () => '', reset: () => {} };
 let selectedStatsCode = null;
 let editingCode = null;
 let qrCurrentCode = null;
@@ -87,6 +121,11 @@ let timelineChart = null;
 let devicesChart = null;
 
 initThemeToggle(themeBtn);
+initPasswordToggles();
+mountTurnstile(authTurnstileEl).then((ctrl) => {
+  authTurnstileCtrl = ctrl;
+  updateAuthUI();
+});
 
 function setBoxError(box, msg) {
   if (!msg) {
@@ -102,6 +141,7 @@ function syncView() {
   const loggedIn = hasSession();
   authSection.hidden = loggedIn;
   appSection.hidden = !loggedIn;
+  accountOpenBtn.hidden = !loggedIn;
   logoutBtn.hidden = !loggedIn;
   deleteAccOpenBtn.hidden = !loggedIn;
 
@@ -117,27 +157,100 @@ onUnauthorized(() => {
   setBoxError(authError, 'Sessão expirada. Faça login novamente.');
 });
 
+function updateAuthUI() {
+  verifyPendingBox.hidden = true;
+  authForm.hidden = false;
+  authInfo.hidden = true;
+  setBoxError(authError, '');
+
+  const isRegister = authMode === 'register';
+  const isForgot = authMode === 'forgot';
+
+  tabLogin.classList.toggle('active', authMode === 'login');
+  tabRegister.classList.toggle('active', isRegister);
+
+  authNameField.hidden = !isRegister;
+  authPasswordField.hidden = isForgot;
+  authPassword.required = !isForgot;
+  authPasswordConfirmField.hidden = !isRegister;
+  authPasswordConfirm.required = isRegister;
+  authTurnstileEl.hidden = !((isRegister || isForgot) && authTurnstileCtrl.enabled);
+
+  if (authMode === 'login') {
+    authSubmitBtn.textContent = 'Entrar';
+    authPassword.setAttribute('autocomplete', 'current-password');
+    forgotToggleBtn.textContent = 'Esqueci minha senha';
+  } else if (isRegister) {
+    authSubmitBtn.textContent = 'Criar Conta';
+    authPassword.setAttribute('autocomplete', 'new-password');
+    forgotToggleBtn.textContent = 'Esqueci minha senha';
+  } else {
+    authSubmitBtn.textContent = 'Enviar link de recuperação';
+    forgotToggleBtn.textContent = 'Voltar para o login';
+  }
+}
+
+function showPendingVerification(email) {
+  pendingEmail = email;
+  pendingEmailLabel.textContent = email;
+  authForm.hidden = true;
+  verifyPendingBox.hidden = false;
+  setBoxError(authError, '');
+}
+
+function startResendCooldown(seconds) {
+  let remaining = seconds;
+  pendingResendBtn.disabled = true;
+  const timer = setInterval(() => {
+    remaining -= 1;
+    if (remaining <= 0) {
+      clearInterval(timer);
+      pendingResendBtn.disabled = false;
+      pendingResendBtn.textContent = 'Reenviar e-mail';
+      return;
+    }
+    pendingResendBtn.textContent = `Aguarde ${remaining}s`;
+  }, 1000);
+}
+
 tabLogin.addEventListener('click', () => {
   authMode = 'login';
-  tabLogin.classList.add('active');
-  tabRegister.classList.remove('active');
-  authSubmitBtn.textContent = 'Entrar';
-  authPassword.setAttribute('autocomplete', 'current-password');
-  setBoxError(authError, '');
+  updateAuthUI();
 });
 
 tabRegister.addEventListener('click', () => {
   authMode = 'register';
-  tabRegister.classList.add('active');
-  tabLogin.classList.remove('active');
-  authSubmitBtn.textContent = 'Criar Conta';
-  authPassword.setAttribute('autocomplete', 'new-password');
+  updateAuthUI();
+});
+
+forgotToggleBtn.addEventListener('click', () => {
+  authMode = authMode === 'forgot' ? 'login' : 'forgot';
+  updateAuthUI();
+});
+
+pendingBackBtn.addEventListener('click', () => {
+  authMode = 'login';
+  updateAuthUI();
+});
+
+pendingResendBtn.addEventListener('click', async () => {
+  if (!pendingEmail) return;
   setBoxError(authError, '');
+  pendingResendBtn.disabled = true;
+  try {
+    await resendVerification(pendingEmail);
+    showToast(toastEl, 'E-mail de confirmação reenviado.');
+    startResendCooldown(60);
+  } catch (err) {
+    setBoxError(authError, err.message || 'Erro ao reenviar confirmação.');
+    pendingResendBtn.disabled = false;
+  }
 });
 
 authForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   setBoxError(authError, '');
+  authInfo.hidden = true;
 
   const email = authEmail.value.trim();
   const password = authPassword.value;
@@ -145,22 +258,44 @@ authForm.addEventListener('submit', async (event) => {
 
   try {
     if (authMode === 'register') {
-      await register(email, password);
-      showToast(toastEl, 'Conta criada! Autenticando...');
+      if (password !== authPasswordConfirm.value) {
+        setBoxError(authError, 'As senhas não coincidem.');
+        authSubmitBtn.disabled = false;
+        return;
+      }
+      await register(email, password, authName.value, authTurnstileCtrl.getToken());
+      authPassword.value = '';
+      authPasswordConfirm.value = '';
+      authTurnstileCtrl.reset();
+      showPendingVerification(email);
+      return;
     }
+    if (authMode === 'forgot') {
+      await forgotPassword(email, authTurnstileCtrl.getToken());
+      authTurnstileCtrl.reset();
+      authInfo.textContent = 'Se o e-mail existir, enviamos as instruções para redefinir sua senha.';
+      authInfo.hidden = false;
+      return;
+    }
+
     await login(email, password);
     authPassword.value = '';
     syncView();
     await loadLinks();
   } catch (err) {
-    setBoxError(authError, err.message || 'Falha na autenticação.');
+    authTurnstileCtrl.reset();
+    if (err.status === 403 && String(err.message).toLowerCase().includes('verificado')) {
+      showPendingVerification(email);
+    } else {
+      setBoxError(authError, err.message || 'Falha na autenticação.');
+    }
   } finally {
     authSubmitBtn.disabled = false;
   }
 });
 
-logoutBtn.addEventListener('click', () => {
-  logout();
+logoutBtn.addEventListener('click', async () => {
+  await logout();
   syncView();
   showToast(toastEl, 'Sessão encerrada.');
 });
@@ -235,18 +370,28 @@ function renderLinksTable(links) {
           text: 'QR',
           onClick: () => openQrModal(link.short_code),
         }),
-        el('button', {
-          type: 'button',
-          className: 'btn btn-secondary btn-sm',
-          text: 'Editar',
-          onClick: () => openEditModal(link),
-        }),
+        link.is_active
+          ? el('button', {
+              type: 'button',
+              className: 'btn btn-secondary btn-sm',
+              text: 'Editar',
+              onClick: () => openEditModal(link),
+            })
+          : null,
         el('button', {
           type: 'button',
           className: 'btn btn-primary btn-sm',
           text: 'Stats',
           onClick: () => loadStats(link.short_code),
-        })
+        }),
+        link.is_active
+          ? el('button', {
+              type: 'button',
+              className: 'btn btn-danger btn-sm',
+              text: 'Desativar',
+              onClick: () => handleDeactivateLink(link.short_code),
+            })
+          : null
       )
     );
     linksTbody.appendChild(tr);
@@ -441,6 +586,65 @@ qrDownloadBtn.addEventListener('click', () => {
   }
 });
 
+async function handleDeactivateLink(code) {
+  if (!window.confirm(`Desativar o link ${code}? Ele deixará de redirecionar imediatamente.`)) {
+    return;
+  }
+  try {
+    await deleteLink(code);
+    showToast(toastEl, `Link ${code} desativado.`);
+    await loadLinks();
+  } catch (err) {
+    showToast(toastEl, err.message || 'Erro ao desativar link.');
+  }
+}
+
+accountOpenBtn.addEventListener('click', async () => {
+  setBoxError(accountError, '');
+  accountCurrentPass.value = '';
+  accountNewPass.value = '';
+  accountNewPassConfirm.value = '';
+  accountModal.hidden = false;
+  try {
+    const me = await getMe();
+    accountEmailLabel.textContent = `${me.email} (${me.status})`;
+    accountNameInput.value = me.name || '';
+  } catch (err) {
+    setBoxError(accountError, err.message || 'Erro ao carregar perfil.');
+  }
+});
+
+accountCancelBtn.addEventListener('click', () => {
+  accountModal.hidden = true;
+});
+
+accountForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  setBoxError(accountError, '');
+  accountSaveBtn.disabled = true;
+
+  const payload = { name: accountNameInput.value.trim() };
+  if (accountNewPass.value) {
+    if (accountNewPass.value !== accountNewPassConfirm.value) {
+      setBoxError(accountError, 'A nova senha e a confirmação não coincidem.');
+      accountSaveBtn.disabled = false;
+      return;
+    }
+    payload.current_password = accountCurrentPass.value;
+    payload.new_password = accountNewPass.value;
+  }
+
+  try {
+    await updateMe(payload);
+    accountModal.hidden = true;
+    showToast(toastEl, 'Perfil atualizado com sucesso.');
+  } catch (err) {
+    setBoxError(accountError, err.message || 'Erro ao atualizar perfil.');
+  } finally {
+    accountSaveBtn.disabled = false;
+  }
+});
+
 deleteAccOpenBtn.addEventListener('click', () => {
   setBoxError(deleteError, '');
   keepLinksCheckbox.checked = true;
@@ -466,7 +670,29 @@ deleteConfirmBtn.addEventListener('click', async () => {
   }
 });
 
-syncView();
-if (hasSession()) {
-  loadLinks();
+for (const modal of [editModal, qrModal, deleteModal, accountModal]) {
+  modal.addEventListener('click', (event) => {
+    if (event.target === modal) {
+      modal.hidden = true;
+    }
+  });
 }
+
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape') return;
+  for (const modal of [editModal, qrModal, deleteModal, accountModal]) {
+    if (!modal.hidden) {
+      modal.hidden = true;
+    }
+  }
+});
+
+(async () => {
+  if (!hasSession()) {
+    await restoreSession();
+  }
+  syncView();
+  if (hasSession()) {
+    loadLinks();
+  }
+})();

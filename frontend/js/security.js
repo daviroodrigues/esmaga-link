@@ -135,3 +135,30 @@ export function showToast(toastEl, message) {
     toastEl.hidden = true;
   }, 2600);
 }
+
+/**
+ * Inicializa botões de visualizar/ocultar senha para todos os elementos com [data-toggle-password].
+ */
+export function initPasswordToggles(root = document) {
+  const buttons = root.querySelectorAll('[data-toggle-password]');
+  for (const btn of buttons) {
+    const targetId = btn.getAttribute('data-toggle-password');
+    const input = targetId ? document.getElementById(targetId) : null;
+    if (!input) continue;
+
+    const eyeOpen = btn.querySelector('[data-eye="open"]');
+    const eyeClosed = btn.querySelector('[data-eye="closed"]');
+
+    btn.addEventListener('click', () => {
+      const showing = input.type === 'text';
+      input.type = showing ? 'password' : 'text';
+      if (eyeOpen && eyeClosed) {
+        eyeOpen.hidden = !showing;
+        eyeClosed.hidden = showing;
+      }
+      const label = showing ? 'Mostrar senha' : 'Ocultar senha';
+      btn.setAttribute('aria-label', label);
+      btn.setAttribute('title', label);
+    });
+  }
+}

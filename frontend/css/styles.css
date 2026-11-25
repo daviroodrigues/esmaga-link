@@ -598,7 +598,55 @@ th {
   margin-bottom: 0.85rem;
 }
 
-.alert-error {
+.alert-success {
+  background: rgba(22, 163, 74, 0.12);
+  border-color: rgba(22, 163, 74, 0.35);
+  color: var(--success);
+}
+
+.alert-info {
+  background: var(--accent-soft);
+  border-color: rgba(14, 165, 233, 0.35);
+  color: var(--accent);
+}
+
+.password-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-wrap input {
+  width: 100%;
+  padding-right: 2.6rem;
+}
+
+.password-toggle {
+  position: absolute;
+  right: 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.password-toggle:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.password-toggle svg {
+  width: 17px;
+  height: 17px;
+  display: block;
+}
   background: rgba(220, 38, 38, 0.12);
   color: var(--danger);
   border: 1px solid rgba(220, 38, 38, 0.3);

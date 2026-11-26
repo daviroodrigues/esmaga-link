@@ -17,23 +17,29 @@ const params = new URLSearchParams(window.location.search);
 const token = params.get('token') || '';
 
 if (!token) {
-  errorEl.textContent = 'Token de redefinição ausente na URL.';
+  errorEl.textContent = 'Link de redefinição inválido ou incompleto.';
   errorEl.hidden = false;
+  statusEl.hidden = true;
   form.hidden = true;
 }
 
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
   errorEl.hidden = true;
+  confirmInput.removeAttribute('aria-invalid');
 
   const newPass = passInput.value;
   if (newPass !== confirmInput.value) {
     errorEl.textContent = 'As senhas não coincidem.';
     errorEl.hidden = false;
+    confirmInput.setAttribute('aria-invalid', 'true');
+    confirmInput.focus();
     return;
   }
 
   submitBtn.disabled = true;
+  submitBtn.textContent = 'Salvando...';
+  form.setAttribute('aria-busy', 'true');
   try {
     await resetPassword(token, newPass);
     form.hidden = true;
@@ -47,5 +53,8 @@ form.addEventListener('submit', async (e) => {
     errorEl.textContent = err.message || 'Erro ao redefinir senha.';
     errorEl.hidden = false;
     submitBtn.disabled = false;
+    submitBtn.textContent = 'Redefinir senha';
+  } finally {
+    form.removeAttribute('aria-busy');
   }
 });

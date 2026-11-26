@@ -115,8 +115,16 @@ async function apiFetch(path, options = {}, allowRetry = true) {
   return data;
 }
 
-export async function getPublicConfig() {
-  return apiFetch('/api/v1/config', { method: 'GET' }, false);
+let publicConfigPromise = null;
+
+export function getPublicConfig() {
+  if (!publicConfigPromise) {
+    publicConfigPromise = apiFetch('/api/v1/config', { method: 'GET' }, false).catch(() => ({
+      turnstile_site_key: '',
+      portfolio_mode: false,
+    }));
+  }
+  return publicConfigPromise;
 }
 
 export async function register(email, password, name = '', turnstileToken = '') {

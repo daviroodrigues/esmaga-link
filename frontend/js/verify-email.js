@@ -17,7 +17,7 @@ const token = params.get('token') || '';
 
 async function runVerification() {
   if (!token) {
-    statusEl.textContent = 'Token de verificação não informado na URL.';
+    statusEl.textContent = 'Link de confirmação inválido ou incompleto.';
     resendForm.hidden = false;
     return;
   }
@@ -25,7 +25,7 @@ async function runVerification() {
   try {
     await verifyEmail(token);
     statusEl.hidden = true;
-    successEl.textContent = 'E-mail confirmado com sucesso! Redirecionando para o login...';
+    successEl.textContent = 'E-mail confirmado com sucesso! Redirecionando para o painel...';
     successEl.hidden = false;
     actionsEl.hidden = false;
     setTimeout(() => {
@@ -33,7 +33,7 @@ async function runVerification() {
     }, 2000);
   } catch (err) {
     statusEl.textContent = 'Não foi possível validar seu e-mail.';
-    errorEl.textContent = err.message || 'Token inválido ou expirado.';
+    errorEl.textContent = err.message || 'Link inválido ou expirado.';
     errorEl.hidden = false;
     resendForm.hidden = false;
   }
@@ -60,6 +60,7 @@ resendForm.addEventListener('submit', async (e) => {
   successEl.hidden = true;
   const email = resendEmailInput.value.trim();
   resendBtn.disabled = true;
+  resendForm.setAttribute('aria-busy', 'true');
   try {
     await resendVerification(email);
     successEl.textContent = 'Se o e-mail estiver pendente, enviamos um novo link de confirmação.';
@@ -69,6 +70,8 @@ resendForm.addEventListener('submit', async (e) => {
     errorEl.textContent = err.message || 'Erro ao reenviar confirmação.';
     errorEl.hidden = false;
     resendBtn.disabled = false;
+  } finally {
+    resendForm.removeAttribute('aria-busy');
   }
 });
 

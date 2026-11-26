@@ -3,18 +3,33 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Esmaga Link — Dashboard</title>
+  <meta name="description" content="Gerencie seus links encurtados, edite destinos e acompanhe estatísticas de cliques no Esmaga Link.">
+  <title>Esmaga Link — Painel</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <script src="/js/theme-init.js"></script>
   <link rel="stylesheet" href="/css/styles.css">
 </head>
 <body>
+  <a class="skip-link" href="#main-content">Pular para o conteúdo principal</a>
+
   <header class="topbar">
     <div class="topbar-inner">
-      <a href="/" class="brand">
-        <span>Esmaga Link</span>
-        <span class="brand-badge">Dashboard</span>
-      </a>
-      <nav class="nav-actions">
-        <button id="theme-toggle" class="icon-btn" type="button" aria-label="Alternar tema" title="Alternar tema">
+      <div class="brand-group">
+        <a href="/" class="brand">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M10 14L14 10"></path>
+              <path d="M11 17l-1.5 1.5a3.5 3.5 0 0 1-5-5L6 12"></path>
+              <path d="M13 7l1.5-1.5a3.5 3.5 0 0 1 5 5L18 12"></path>
+            </svg>
+          </span>
+          <span>Esmaga Link</span>
+        </a>
+        <span class="brand-sep" aria-hidden="true">/</span>
+        <span class="brand-section">Painel</span>
+      </div>
+      <nav class="nav-actions" aria-label="Navegação principal">
+        <button id="theme-toggle" class="icon-btn" type="button" aria-label="Alternar tema" title="Alternar tema" aria-pressed="false">
           <svg data-theme-icon="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <circle cx="12" cy="12" r="4"></circle>
             <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path>
@@ -23,38 +38,46 @@
             <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
           </svg>
         </button>
-        <a href="/" class="btn btn-secondary btn-sm">Encurtador Público</a>
-        <button id="account-open-btn" class="btn btn-secondary btn-sm" type="button" hidden>Minha Conta</button>
-        <button id="delete-account-open-btn" class="btn btn-danger btn-sm" type="button" hidden>Excluir Conta</button>
-        <button id="logout-btn" class="btn btn-secondary btn-sm" type="button" hidden>Sair</button>
+        <a href="/" class="btn btn-ghost btn-sm">Encurtador</a>
+        <a href="/engenharia" class="btn btn-ghost btn-sm" data-portfolio-only hidden>Engenharia</a>
+        <button id="account-open-btn" class="btn btn-secondary btn-sm" type="button" hidden>Minha conta</button>
+        <button id="logout-btn" class="btn btn-ghost btn-sm" type="button" hidden>Sair</button>
       </nav>
     </div>
   </header>
 
-  <main class="container">
-    <section id="auth-section" class="card auth-card">
-      <div class="tabs">
-        <button id="tab-login" class="tab-btn active" type="button">Entrar</button>
-        <button id="tab-register" class="tab-btn" type="button">Criar Conta</button>
+  <main id="main-content" class="container">
+    <section id="auth-section" class="card auth-card" aria-labelledby="auth-heading">
+      <div class="auth-header">
+        <h1 id="auth-heading" class="card-title">Acesse sua conta</h1>
+        <p id="auth-subtitle" class="card-subtitle">Gerencie seus links, altere destinos e acompanhe os cliques.</p>
       </div>
 
-      <div id="auth-error" class="alert alert-error" hidden></div>
-      <div id="auth-info" class="alert alert-info" hidden></div>
+      <div id="auth-tabs" class="tabs" role="tablist" aria-label="Modo de acesso">
+        <button id="tab-login" class="tab-btn active" type="button" role="tab" aria-selected="true" aria-controls="auth-form">Entrar</button>
+        <button id="tab-register" class="tab-btn" type="button" role="tab" aria-selected="false" aria-controls="auth-form" tabindex="-1">Criar conta</button>
+      </div>
 
-      <form id="auth-form" class="form-stack">
+      <div id="auth-error" class="alert alert-error" role="alert" hidden></div>
+      <div id="auth-info" class="alert alert-info" role="status" aria-live="polite" hidden></div>
+
+      <form id="auth-form" class="form-stack" role="tabpanel" aria-labelledby="tab-login">
         <div id="auth-name-field" class="field" hidden>
           <label for="auth-name">Nome (opcional)</label>
-          <input id="auth-name" type="text" autocomplete="name" placeholder="Seu nome">
+          <input id="auth-name" type="text" autocomplete="name" placeholder="Como prefere ser chamado">
         </div>
         <div class="field">
           <label for="auth-email">E-mail</label>
-          <input id="auth-email" type="email" required autocomplete="email" placeholder="seu.nome@dominio.com">
+          <input id="auth-email" type="email" required autocomplete="email" placeholder="voce@exemplo.com">
         </div>
         <div id="auth-password-field" class="field">
-          <label for="auth-password">Senha (mín. 6 caracteres)</label>
+          <div class="field-label-row">
+            <label for="auth-password">Senha</label>
+            <button id="forgot-toggle-btn" class="btn-link" type="button">Esqueci minha senha</button>
+          </div>
           <div class="password-wrap">
-            <input id="auth-password" type="password" required minlength="6" autocomplete="current-password" placeholder="••••••••">
-            <button class="password-toggle" type="button" data-toggle-password="auth-password" aria-label="Mostrar senha" title="Mostrar senha">
+            <input id="auth-password" type="password" required minlength="6" autocomplete="current-password" placeholder="Mínimo de 6 caracteres">
+            <button class="password-toggle" type="button" data-toggle-password="auth-password" aria-label="Mostrar senha" title="Mostrar senha" aria-pressed="false">
               <svg data-eye="open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle>
               </svg>
@@ -67,8 +90,8 @@
         <div id="auth-password-confirm-field" class="field" hidden>
           <label for="auth-password-confirm">Confirmar senha</label>
           <div class="password-wrap">
-            <input id="auth-password-confirm" type="password" minlength="6" autocomplete="new-password" placeholder="••••••••">
-            <button class="password-toggle" type="button" data-toggle-password="auth-password-confirm" aria-label="Mostrar senha" title="Mostrar senha">
+            <input id="auth-password-confirm" type="password" minlength="6" autocomplete="new-password" placeholder="Repita a senha">
+            <button class="password-toggle" type="button" data-toggle-password="auth-password-confirm" aria-label="Mostrar confirmação de senha" title="Mostrar senha" aria-pressed="false">
               <svg data-eye="open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle>
               </svg>
@@ -78,14 +101,15 @@
             </button>
           </div>
         </div>
-        <div id="auth-turnstile" style="display:flex;justify-content:center;" hidden></div>
+        <div id="auth-turnstile" class="turnstile-slot" hidden></div>
         <button id="auth-submit-btn" class="btn btn-primary" type="submit">Entrar</button>
-        <button id="forgot-toggle-btn" class="btn btn-secondary btn-sm" type="button">Esqueci minha senha</button>
+        <div id="forgot-back-wrap" class="auth-footer-action" hidden>
+          <button id="forgot-back-btn" class="btn-link" type="button">Voltar para o login</button>
+        </div>
       </form>
 
       <div id="verify-pending-box" class="form-stack" hidden>
-        <h2 class="card-title">Verifique sua caixa de entrada</h2>
-        <p class="muted">Enviamos um link de confirmação para <strong id="pending-email-label"></strong>. Confirme seu e-mail para acessar sua conta.</p>
+        <p class="muted">Enviamos um link de confirmação para <strong id="pending-email-label"></strong>. Abra o e-mail para ativar sua conta.</p>
         <div class="modal-actions">
           <button id="pending-back-btn" class="btn btn-secondary" type="button">Voltar ao login</button>
           <button id="pending-resend-btn" class="btn btn-primary" type="button">Reenviar e-mail</button>
@@ -94,31 +118,50 @@
     </section>
 
     <div id="app-section" hidden>
-      <section class="card">
-        <h2 class="card-title">Novo link autenticado</h2>
-        <p class="muted">Links autenticados permitem edição do destino e painel de telemetria.</p>
-        <div id="dash-create-error" class="alert alert-error" hidden></div>
-        <form id="dash-create-form" class="form-row">
-          <input id="dash-url-input" type="url" required placeholder="Cole a URL de destino (ex: https://docs.projeto.dev/guia)" autocomplete="off">
-          <button id="dash-create-btn" class="btn btn-primary" type="submit">Criar Link</button>
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Seus links</h1>
+          <p class="muted no-margin">Crie, edite destinos e acompanhe o desempenho dos seus links encurtados.</p>
+        </div>
+        <div class="summary-meta" aria-label="Resumo dos links">
+          <span>Total: <strong id="summary-total">0</strong></span>
+          <span class="summary-dot" aria-hidden="true">·</span>
+          <span>Ativos: <strong id="summary-active">0</strong></span>
+        </div>
+      </div>
+
+      <section class="card" aria-labelledby="create-link-heading">
+        <h2 id="create-link-heading" class="card-title">Encurtar novo link</h2>
+        <p class="card-subtitle">Links criados na sua conta podem ter o destino editado a qualquer momento e exibem estatísticas de acesso.</p>
+        <div id="dash-create-error" class="alert alert-error" role="alert" hidden></div>
+        <form id="dash-create-form" class="form-row" novalidate>
+          <label class="sr-only" for="dash-url-input">URL de destino</label>
+          <input id="dash-url-input" type="url" inputmode="url" required placeholder="https://docs.exemplo.com/guia" autocomplete="off">
+          <button id="dash-create-btn" class="btn btn-primary" type="submit">Criar link</button>
         </form>
       </section>
 
-      <section class="card">
-        <div class="stats-header">
-          <h2 class="card-title">Meus Links</h2>
+      <section class="card" aria-labelledby="my-links-heading">
+        <div class="card-header-row">
+          <h2 id="my-links-heading" class="card-title">Meus links</h2>
           <button id="refresh-links-btn" class="btn btn-secondary btn-sm" type="button">Atualizar</button>
         </div>
-        <p id="links-empty" class="muted">Você ainda não possui links criados.</p>
+
+        <div id="links-empty" class="empty-state">
+          <p class="empty-state-title">Você ainda não criou nenhum link</p>
+          <p class="empty-state-desc">Cole uma URL no campo acima para criar seu primeiro link curto e acompanhar os acessos.</p>
+        </div>
+
         <div id="links-table-wrap" class="table-wrap" hidden>
-          <table>
+          <table class="responsive-table">
+            <caption class="sr-only">Lista dos seus links encurtados</caption>
             <thead>
               <tr>
-                <th>Link Curto</th>
-                <th>URL Original</th>
-                <th>Status</th>
-                <th>Criado em</th>
-                <th>Ações</th>
+                <th scope="col">Link curto</th>
+                <th scope="col">URL de destino</th>
+                <th scope="col">Status</th>
+                <th scope="col">Criado em</th>
+                <th scope="col">Ações</th>
               </tr>
             </thead>
             <tbody id="links-tbody"></tbody>
@@ -126,14 +169,15 @@
         </div>
       </section>
 
-      <section id="stats-section" class="card" hidden>
+      <section id="stats-section" class="card" aria-labelledby="stats-heading" hidden>
         <div class="stats-header">
           <div>
-            <h2 class="card-title">Telemetria de Cliques — <span id="stats-code-label"></span></h2>
-            <p class="muted">Dados agregados a partir do Cassandra (<code>click_events</code>).</p>
+            <h2 id="stats-heading" class="card-title">Estatísticas — <span id="stats-code-label" class="mono"></span></h2>
+            <p class="muted no-margin">Cliques, dispositivos, origens e países registrados no período selecionado.</p>
           </div>
-          <div class="form-row">
-            <select id="stats-days-select" aria-label="Período em dias">
+          <div class="period-control">
+            <label for="stats-days-select">Período</label>
+            <select id="stats-days-select">
               <option value="7">Últimos 7 dias</option>
               <option value="14">Últimos 14 dias</option>
               <option value="30">Últimos 30 dias</option>
@@ -141,31 +185,46 @@
           </div>
         </div>
 
-        <div id="stats-error" class="alert alert-error" hidden></div>
+        <div id="stats-error" class="alert alert-error" role="alert" hidden></div>
 
         <div class="kpi-row">
           <div class="kpi-box">
-            <div class="kpi-label">Total de Cliques</div>
+            <div class="kpi-label">Total de cliques</div>
             <div id="stats-total-clicks" class="kpi-value">0</div>
+          </div>
+          <div class="kpi-box">
+            <div class="kpi-label">Média por dia</div>
+            <div id="stats-avg-clicks" class="kpi-value">0</div>
+          </div>
+          <div class="kpi-box">
+            <div class="kpi-label">Principal dispositivo</div>
+            <div id="stats-top-device" class="kpi-value">—</div>
           </div>
         </div>
 
         <div class="charts-grid">
           <div class="chart-panel">
-            <canvas id="chart-timeline"></canvas>
+            <h3 class="chart-panel-title">Cliques por dia</h3>
+            <div id="timeline-canvas-wrap" class="chart-canvas-wrap">
+              <canvas id="chart-timeline" role="img" aria-label="Gráfico de cliques por dia"></canvas>
+            </div>
           </div>
           <div class="chart-panel">
-            <canvas id="chart-devices"></canvas>
+            <h3 class="chart-panel-title">Dispositivos</h3>
+            <div id="devices-canvas-wrap" class="chart-canvas-wrap">
+              <canvas id="chart-devices" role="img" aria-label="Gráfico de cliques por dispositivo"></canvas>
+            </div>
+            <p id="devices-empty" class="chart-empty" hidden>Ainda não há cliques registrados neste período.</p>
           </div>
         </div>
 
         <div class="breakdown-grid">
-          <div class="card">
-            <h3 class="card-title">Top Referrers</h3>
+          <div class="breakdown-card">
+            <h3 class="chart-panel-title">Principais origens</h3>
             <ul id="stats-referrers" class="breakdown-list"></ul>
           </div>
-          <div class="card">
-            <h3 class="card-title">Países</h3>
+          <div class="breakdown-card">
+            <h3 class="chart-panel-title">Países</h3>
             <ul id="stats-countries" class="breakdown-list"></ul>
           </div>
         </div>
@@ -173,18 +232,36 @@
     </div>
   </main>
 
+  <footer class="site-footer">
+    <div class="site-footer-inner">
+      <span>Esmaga Link — Painel de gerenciamento de links.</span>
+      <nav class="footer-links" aria-label="Links do rodapé">
+        <a href="/">Encurtador</a>
+        <a href="/engenharia" data-portfolio-only hidden>Engenharia</a>
+        <a href="/swagger/" data-portfolio-only hidden>Documentação da API</a>
+      </nav>
+    </div>
+  </footer>
+
   <div id="edit-modal" class="modal-backdrop" hidden>
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="edit-modal-title">
-      <h2 id="edit-modal-title" class="card-title">Editar destino</h2>
-      <div id="edit-error" class="alert alert-error" hidden></div>
-      <form id="edit-form" class="form-stack">
+      <div class="modal-header">
+        <h2 id="edit-modal-title" class="card-title">Editar destino</h2>
+        <button class="icon-btn" type="button" data-close-modal="edit-modal" aria-label="Fechar janela">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div id="edit-error" class="alert alert-error" role="alert" hidden></div>
+      <form id="edit-form" class="form-stack" novalidate>
         <div class="field">
-          <label for="edit-url-input">Nova URL original (<span id="edit-code-label"></span>)</label>
-          <input id="edit-url-input" type="url" required autocomplete="off" placeholder="https://novo-destino.com/pagina">
+          <label for="edit-url-input">Nova URL de destino (<span id="edit-code-label" class="mono"></span>)</label>
+          <input id="edit-url-input" type="url" inputmode="url" required autocomplete="off" placeholder="https://novo-destino.com/pagina">
         </div>
         <div class="modal-actions">
           <button id="edit-cancel-btn" class="btn btn-secondary" type="button">Cancelar</button>
-          <button id="edit-save-btn" class="btn btn-primary" type="submit">Salvar</button>
+          <button id="edit-save-btn" class="btn btn-primary" type="submit">Salvar destino</button>
         </div>
       </form>
     </div>
@@ -192,9 +269,18 @@
 
   <div id="qr-modal" class="modal-backdrop" hidden>
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="qr-modal-title">
-      <h2 id="qr-modal-title" class="card-title">QR Code — <span id="qr-code-label"></span></h2>
+      <div class="modal-header">
+        <h2 id="qr-modal-title" class="card-title">QR Code — <span id="qr-code-label" class="mono"></span></h2>
+        <button class="icon-btn" type="button" data-close-modal="qr-modal" aria-label="Fechar janela">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
       <div class="qr-box">
-        <canvas id="modal-qr-canvas" width="220" height="220"></canvas>
+        <div class="qr-frame">
+          <canvas id="modal-qr-canvas" width="220" height="220" role="img" aria-label="QR Code do link selecionado"></canvas>
+        </div>
       </div>
       <div class="modal-actions">
         <button id="qr-close-btn" class="btn btn-secondary" type="button">Fechar</button>
@@ -203,21 +289,52 @@
     </div>
   </div>
 
+  <div id="deactivate-modal" class="modal-backdrop" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="deactivate-modal-title" aria-describedby="deactivate-modal-desc">
+      <div class="modal-header">
+        <h2 id="deactivate-modal-title" class="card-title">Desativar link</h2>
+        <button class="icon-btn" type="button" data-close-modal="deactivate-modal" aria-label="Fechar janela">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <p id="deactivate-modal-desc" class="muted">
+        O link <strong id="deactivate-code-label" class="mono"></strong> deixará de redirecionar imediatamente. Essa ação não pode ser desfeita.
+      </p>
+      <div id="deactivate-error" class="alert alert-error" role="alert" hidden></div>
+      <div class="modal-actions">
+        <button id="deactivate-cancel-btn" class="btn btn-secondary" type="button">Cancelar</button>
+        <button id="deactivate-confirm-btn" class="btn btn-danger" type="button">Desativar link</button>
+      </div>
+    </div>
+  </div>
+
   <div id="account-modal" class="modal-backdrop" hidden>
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="account-modal-title">
-      <h2 id="account-modal-title" class="card-title">Configurações da Conta</h2>
-      <p id="account-email-label" class="muted"></p>
-      <div id="account-error" class="alert alert-error" hidden></div>
+      <div class="modal-header">
+        <div>
+          <h2 id="account-modal-title" class="card-title">Minha conta</h2>
+          <p id="account-email-label" class="muted no-margin"></p>
+        </div>
+        <button class="icon-btn" type="button" data-close-modal="account-modal" aria-label="Fechar janela">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <div id="account-error" class="alert alert-error" role="alert" hidden></div>
       <form id="account-form" class="form-stack">
         <div class="field">
           <label for="account-name-input">Nome</label>
           <input id="account-name-input" type="text" autocomplete="name" placeholder="Seu nome">
         </div>
         <div class="field">
-          <label for="account-current-pass">Senha atual (para alterar senha)</label>
+          <label for="account-current-pass">Senha atual (necessária para alterar a senha)</label>
           <div class="password-wrap">
             <input id="account-current-pass" type="password" autocomplete="current-password" placeholder="••••••••">
-            <button class="password-toggle" type="button" data-toggle-password="account-current-pass" aria-label="Mostrar senha" title="Mostrar senha">
+            <button class="password-toggle" type="button" data-toggle-password="account-current-pass" aria-label="Mostrar senha atual" title="Mostrar senha" aria-pressed="false">
               <svg data-eye="open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle>
               </svg>
@@ -231,7 +348,7 @@
           <label for="account-new-pass">Nova senha (mín. 6 caracteres)</label>
           <div class="password-wrap">
             <input id="account-new-pass" type="password" minlength="6" autocomplete="new-password" placeholder="••••••••">
-            <button class="password-toggle" type="button" data-toggle-password="account-new-pass" aria-label="Mostrar senha" title="Mostrar senha">
+            <button class="password-toggle" type="button" data-toggle-password="account-new-pass" aria-label="Mostrar nova senha" title="Mostrar senha" aria-pressed="false">
               <svg data-eye="open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle>
               </svg>
@@ -245,7 +362,7 @@
           <label for="account-new-pass-confirm">Confirmar nova senha</label>
           <div class="password-wrap">
             <input id="account-new-pass-confirm" type="password" minlength="6" autocomplete="new-password" placeholder="••••••••">
-            <button class="password-toggle" type="button" data-toggle-password="account-new-pass-confirm" aria-label="Mostrar senha" title="Mostrar senha">
+            <button class="password-toggle" type="button" data-toggle-password="account-new-pass-confirm" aria-label="Mostrar confirmação da nova senha" title="Mostrar senha" aria-pressed="false">
               <svg data-eye="open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle>
               </svg>
@@ -257,20 +374,36 @@
         </div>
         <div class="modal-actions">
           <button id="account-cancel-btn" class="btn btn-secondary" type="button">Fechar</button>
-          <button id="account-save-btn" class="btn btn-primary" type="submit">Salvar Alterações</button>
+          <button id="account-save-btn" class="btn btn-primary" type="submit">Salvar alterações</button>
         </div>
       </form>
+
+      <hr class="modal-divider">
+      <div class="danger-zone">
+        <div>
+          <h3 class="danger-zone-title">Excluir conta</h3>
+          <p class="danger-zone-desc">Remove seu acesso permanentemente.</p>
+        </div>
+        <button id="delete-account-open-btn" class="btn btn-danger-outline btn-sm" type="button">Excluir conta</button>
+      </div>
     </div>
   </div>
 
   <div id="delete-account-modal" class="modal-backdrop" hidden>
-    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title">
-      <h2 id="delete-modal-title" class="card-title">Excluir conta</h2>
-      <p class="muted">Esta ação remove permanentemente sua conta de usuário do PostgreSQL.</p>
-      <div id="delete-error" class="alert alert-error" hidden></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title" aria-describedby="delete-modal-desc">
+      <div class="modal-header">
+        <h2 id="delete-modal-title" class="card-title">Excluir conta</h2>
+        <button class="icon-btn" type="button" data-close-modal="delete-account-modal" aria-label="Fechar janela">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <p id="delete-modal-desc" class="muted">Esta ação remove sua conta permanentemente e não pode ser desfeita.</p>
+      <div id="delete-error" class="alert alert-error" role="alert" hidden></div>
       <label class="checkbox-row">
         <input id="keep-links-checkbox" type="checkbox" checked>
-        <span>Manter meus links ativos (torná-los anônimos e imutáveis para não quebrar links já compartilhados)</span>
+        <span>Manter meus links ativos (eles continuam funcionando de forma anônima para não quebrar links já compartilhados).</span>
       </label>
       <div class="modal-actions">
         <button id="delete-cancel-btn" class="btn btn-secondary" type="button">Cancelar</button>
@@ -279,7 +412,7 @@
     </div>
   </div>
 
-  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true" hidden></div>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js" crossorigin="anonymous"></script>

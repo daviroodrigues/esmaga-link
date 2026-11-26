@@ -1,11 +1,13 @@
-import { createLink } from './api.js';
+import { createLink, getPublicConfig } from './api.js';
 import { downloadQRCodePNG, renderQRCode } from './qrcode.js';
 import { mountTurnstile } from './turnstile.js';
 import {
+  applyPortfolioVisibility,
   buildShortUrl,
   clearElement,
   createSafeAnchor,
   el,
+  flashButtonLabel,
   formatDate,
   initThemeToggle,
   isSafeHttpUrl,
@@ -39,6 +41,7 @@ let lastShortCode = '';
 let turnstileCtrl = { enabled: false, getToken: () => '', reset: () => {} };
 
 initThemeToggle(themeBtn);
+getPublicConfig().then((cfg) => applyPortfolioVisibility(cfg));
 mountTurnstile(turnstileContainer).then((ctrl) => {
   turnstileCtrl = ctrl;
 });
@@ -47,10 +50,12 @@ function setError(message) {
   if (!message) {
     errorBox.hidden = true;
     errorBox.textContent = '';
+    urlInput.removeAttribute('aria-invalid');
     return;
   }
   errorBox.textContent = message;
   errorBox.hidden = false;
+  urlInput.setAttribute('aria-invalid', 'true');
 }
 
 function loadHistory() {
@@ -89,9 +94,12 @@ function saveToHistory(link) {
   }
 }
 
-async function copyToClipboard(text) {
+async function copyToClipboard(text, triggerBtn = null) {
   try {
     await navigator.clipboard.writeText(text);
+    if (triggerBtn) {
+      flashButtonLabel(triggerBtn, 'Copiado!');
+    }
     showToast(toastEl, 'Link copiado para a área de transferência.');
   } catch {
     showToast(toastEl, 'Não foi possível copiar automaticamente.');
@@ -111,22 +119,25 @@ function renderHistory() {
 
   for (const item of items) {
     const shortUrl = buildShortUrl(item.short_code);
+    const copyBtn = el('button', {
+      type: 'button',
+      className: 'btn btn-secondary btn-sm',
+      text: 'Copiar',
+      attrs: { 'aria-label': `Copiar link curto ${item.short_code}` },
+    });
+    copyBtn.addEventListener('click', () => copyToClipboard(shortUrl, copyBtn));
+
     const tr = el(
       'tr',
       {},
-      el('td', {}, createSafeAnchor(shortUrl, shortUrl)),
-      el('td', { className: 'url-cell', title: item.original_url }, createSafeAnchor(item.original_url, item.original_url)),
-      el('td', { text: formatDate(item.created_at) }),
+      el('td', { attrs: { 'data-label': 'Link curto' } }, createSafeAnchor(shortUrl, item.short_code, 'short-code-link')),
       el(
         'td',
-        { className: 'actions-cell' },
-        el('button', {
-          type: 'button',
-          className: 'btn btn-secondary btn-sm',
-          text: 'Copiar',
-          onClick: () => copyToClipboard(shortUrl),
-        })
-      )
+        { className: 'url-cell', title: item.original_url, attrs: { 'data-label': 'Destino' } },
+        createSafeAnchor(item.original_url, item.original_url)
+      ),
+      el('td', { className: 'date-cell', text: formatDate(item.created_at), attrs: { 'data-label': 'Criado em' } }),
+      el('td', { className: 'actions-cell' }, copyBtn)
     );
     historyTbody.appendChild(tr);
   }
@@ -139,9 +150,10 @@ async function showResult(link) {
   clearElement(resultLinkSlot);
   resultLinkSlot.appendChild(createSafeAnchor(lastShortUrl, lastShortUrl));
   resultOriginal.textContent = `Destino: ${link.original_url}`;
+  qrCanvas.setAttribute('aria-label', `QR Code do link curto ${link.short_code}`);
   resultCard.hidden = false;
 
-  await renderQRCode(qrCanvas, lastShortUrl, 180);
+  await renderQRCode(qrCanvas, lastShortUrl, 160);
 }
 
 form.addEventListener('submit', async (event) => {
@@ -151,11 +163,13 @@ form.addEventListener('submit', async (event) => {
   const rawUrl = urlInput.value.trim();
   if (!isSafeHttpUrl(rawUrl)) {
     setError('Informe uma URL válida iniciando com http:// ou https://');
+    urlInput.focus();
     return;
   }
 
   shortenBtn.disabled = true;
   shortenBtn.textContent = 'Encurtando...';
+  form.setAttribute('aria-busy', 'true');
 
   try {
     const link = await createLink(rawUrl, turnstileCtrl.getToken());
@@ -169,24 +183,35 @@ form.addEventListener('submit', async (event) => {
     turnstileCtrl.reset();
   } finally {
     shortenBtn.disabled = false;
-    shortenBtn.textContent = 'Esmagar';
+    shortenBtn.textContent = 'Esmagar link';
+    form.removeAttribute('aria-busy');
+  }
+});
+
+urlInput.addEventListener('input', () => {
+  if (!errorBox.hidden) {
+    setError('');
   }
 });
 
 copyResultBtn.addEventListener('click', () => {
   if (lastShortUrl) {
-    copyToClipboard(lastShortUrl);
+    copyToClipboard(lastShortUrl, copyResultBtn);
   }
 });
 
 downloadQrBtn.addEventListener('click', () => {
   if (lastShortCode) {
     downloadQRCodePNG(qrCanvas, lastShortCode);
+    showToast(toastEl, 'Download do QR Code iniciado.');
   }
 });
 
 clearHistoryBtn.addEventListener('click', () => {
-  localStorage.removeItem(HISTORY_KEY);
+  try {
+    localStorage.removeItem(HISTORY_KEY);
+  } catch {
+  }
   renderHistory();
   showToast(toastEl, 'Histórico local limpo.');
 });

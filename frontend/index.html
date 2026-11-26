@@ -3,17 +3,29 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Esmaga Link — Encurtador de URLs</title>
+  <meta name="description" content="Encurte URLs longas em segundos, gere QR Codes em PNG e acompanhe cliques no painel do Esmaga Link.">
+  <title>Esmaga Link — Encurtador de URLs e QR Code</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <script src="/js/theme-init.js"></script>
   <link rel="stylesheet" href="/css/styles.css">
 </head>
 <body>
+  <a class="skip-link" href="#main-content">Pular para o conteúdo principal</a>
+
   <header class="topbar">
     <div class="topbar-inner">
-      <a href="/" class="brand">
+      <a href="/" class="brand" aria-current="page">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10 14L14 10"></path>
+            <path d="M11 17l-1.5 1.5a3.5 3.5 0 0 1-5-5L6 12"></path>
+            <path d="M13 7l1.5-1.5a3.5 3.5 0 0 1 5 5L18 12"></path>
+          </svg>
+        </span>
         <span>Esmaga Link</span>
       </a>
-      <nav class="nav-actions">
-        <button id="theme-toggle" class="icon-btn" type="button" aria-label="Alternar tema" title="Alternar tema">
+      <nav class="nav-actions" aria-label="Navegação principal">
+        <button id="theme-toggle" class="icon-btn" type="button" aria-label="Alternar tema" title="Alternar tema" aria-pressed="false">
           <svg data-theme-icon="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <circle cx="12" cy="12" r="4"></circle>
             <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path>
@@ -22,62 +34,84 @@
             <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
           </svg>
         </button>
-        <a href="/dashboard" class="btn btn-primary btn-sm">Dashboard</a>
+        <a href="/engenharia" class="btn btn-ghost btn-sm" data-portfolio-only hidden>Engenharia</a>
+        <a href="/dashboard" class="btn btn-primary btn-sm">Acessar painel</a>
       </nav>
     </div>
   </header>
 
-  <main class="hero-shell">
-    <section class="hero-center">
-      <h1 class="hero-logo">Esmaga<span>Link</span></h1>
-      <p class="hero-subtitle">Cole uma URL longa para gerar um link curto e QR Code em milissegundos.</p>
+  <main id="main-content" class="hero-shell">
+    <section class="hero-block" aria-labelledby="hero-heading">
+      <h1 id="hero-heading" class="hero-title">Transforme URLs longas em links curtos</h1>
+      <p class="hero-subtitle">Cole o endereço abaixo para gerar um link compacto e o QR Code em PNG na hora, sem precisar criar conta.</p>
 
-      <div id="home-error" class="alert alert-error" hidden></div>
+      <div id="home-error" class="alert alert-error" role="alert" hidden></div>
 
-      <form id="shorten-form" class="hero-search-form">
+      <form id="shorten-form" class="hero-search-form" novalidate>
+        <label class="sr-only" for="url-input">URL para encurtar</label>
         <input
           id="url-input"
           type="url"
-          placeholder="Cole aqui sua URL (ex: https://github.com/usuario/repositorio)"
+          inputmode="url"
+          placeholder="https://exemplo.com.br/endereco-longo"
           required
           autocomplete="off"
-          aria-label="URL para encurtar"
+          aria-describedby="url-hint"
         >
-        <button id="shorten-btn" class="btn btn-primary" type="submit">Esmagar</button>
+        <button id="shorten-btn" class="btn btn-primary" type="submit">Esmagar link</button>
       </form>
-      <div id="home-turnstile" style="margin-top:12px;display:flex;justify-content:center;" hidden></div>
+      <p id="url-hint" class="hero-hint">Aceita links http:// ou https://. Quer editar o destino depois ou ver cliques? <a href="/dashboard">Acesse o painel</a>.</p>
+      <div id="home-turnstile" class="turnstile-slot" hidden></div>
 
-      <section id="result-card" class="card hero-result" hidden>
+      <section id="result-card" class="card hero-result" aria-labelledby="result-heading" aria-live="polite" hidden>
+        <h2 id="result-heading" class="result-label">Link encurtado</h2>
         <div class="result-grid">
-          <div class="form-stack">
+          <div>
             <div class="short-url-box">
               <span id="result-link-slot"></span>
-              <button id="copy-result-btn" class="btn btn-secondary btn-sm" type="button">Copiar</button>
+              <button id="copy-result-btn" class="btn btn-primary btn-sm" type="button">Copiar link</button>
             </div>
-            <p id="result-original" class="muted"></p>
+            <p id="result-original" class="result-original"></p>
           </div>
           <div class="qr-box">
-            <canvas id="result-qr-canvas" width="160" height="160"></canvas>
-            <button id="download-qr-btn" class="btn btn-secondary btn-sm" type="button">Baixar QR</button>
+            <div class="qr-frame">
+              <canvas id="result-qr-canvas" width="160" height="160" role="img" aria-label="QR Code do link encurtado"></canvas>
+            </div>
+            <button id="download-qr-btn" class="btn btn-secondary btn-sm" type="button">Baixar QR (PNG)</button>
           </div>
         </div>
       </section>
+
+      <ul class="utility-notes" aria-label="Características do serviço">
+        <li>Gratuito e sem cadastro para links rápidos</li>
+        <li>QR Code em PNG pronto para compartilhar ou imprimir</li>
+        <li>Edição de destino e contagem de cliques no painel</li>
+      </ul>
+
+      <aside class="portfolio-callout" aria-label="Bastidores de engenharia" data-portfolio-only hidden>
+        <div>
+          <p class="portfolio-callout-title">Bastidores do projeto</p>
+          <p class="portfolio-callout-desc">Veja como o gerador de códigos funciona por dentro com os simuladores de anel finito e Base62.</p>
+        </div>
+        <a href="/engenharia" class="btn btn-secondary btn-sm">Ver engenharia</a>
+      </aside>
     </section>
 
-    <section id="history-section" class="hero-history" hidden>
-      <div class="hero-history-header">
-        <h2 class="hero-history-title">Recentes nesta máquina</h2>
-        <button id="clear-history-btn" class="btn btn-secondary btn-sm" type="button">Limpar</button>
+    <section id="history-section" class="hero-history" aria-labelledby="history-heading" hidden>
+      <div class="card-header-row">
+        <h2 id="history-heading" class="card-title">Links recentes neste navegador</h2>
+        <button id="clear-history-btn" class="btn btn-ghost btn-sm" type="button">Limpar histórico</button>
       </div>
-      <div class="card">
+      <div class="card card-compact">
         <div id="history-table-wrap" class="table-wrap">
-          <table>
+          <table class="responsive-table">
+            <caption class="sr-only">Últimos links encurtados neste navegador</caption>
             <thead>
               <tr>
-                <th>Link Curto</th>
-                <th>Destino</th>
-                <th>Criado em</th>
-                <th>Ações</th>
+                <th scope="col">Link curto</th>
+                <th scope="col">Destino</th>
+                <th scope="col">Criado em</th>
+                <th scope="col">Ações</th>
               </tr>
             </thead>
             <tbody id="history-tbody"></tbody>
@@ -87,7 +121,18 @@
     </section>
   </main>
 
-  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <footer class="site-footer">
+    <div class="site-footer-inner">
+      <span>Esmaga Link — Encurtador de URLs.</span>
+      <nav class="footer-links" aria-label="Links do rodapé">
+        <a href="/dashboard">Painel</a>
+        <a href="/engenharia" data-portfolio-only hidden>Engenharia</a>
+        <a href="/swagger/" data-portfolio-only hidden>Documentação da API</a>
+      </nav>
+    </div>
+  </footer>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true" hidden></div>
 
   <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js" crossorigin="anonymous"></script>
   <script type="module" src="/js/home.js"></script>

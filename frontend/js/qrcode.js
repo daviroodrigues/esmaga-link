@@ -7,7 +7,7 @@ export async function renderQRCode(canvas, url, size = 180) {
     width: size,
     margin: 2,
     color: {
-      dark: '#0f172a',
+      dark: '#1c1917',
       light: '#ffffff',
     },
     errorCorrectionLevel: 'M',

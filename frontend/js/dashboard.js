@@ -6,6 +6,7 @@ import {
   forgotPassword,
   getLinkStats,
   getMe,
+  getPublicConfig,
   hasSession,
   listMyLinks,
   login,
@@ -19,13 +20,17 @@ import {
 import { downloadQRCodePNG, renderQRCode } from './qrcode.js';
 import { mountTurnstile } from './turnstile.js';
 import {
+  applyPortfolioVisibility,
   buildShortUrl,
   clearElement,
+  createModalController,
   createSafeAnchor,
   el,
+  flashButtonLabel,
   formatDate,
   initPasswordToggles,
   initThemeToggle,
+  isDarkTheme,
   isSafeHttpUrl,
   showToast,
 } from './security.js';
@@ -37,6 +42,9 @@ const deleteAccOpenBtn = document.getElementById('delete-account-open-btn');
 const toastEl = document.getElementById('toast');
 
 const authSection = document.getElementById('auth-section');
+const authHeading = document.getElementById('auth-heading');
+const authSubtitle = document.getElementById('auth-subtitle');
+const authTabs = document.getElementById('auth-tabs');
 const appSection = document.getElementById('app-section');
 const tabLogin = document.getElementById('tab-login');
 const tabRegister = document.getElementById('tab-register');
@@ -51,12 +59,17 @@ const authPasswordConfirm = document.getElementById('auth-password-confirm');
 const authTurnstileEl = document.getElementById('auth-turnstile');
 const authSubmitBtn = document.getElementById('auth-submit-btn');
 const forgotToggleBtn = document.getElementById('forgot-toggle-btn');
+const forgotBackWrap = document.getElementById('forgot-back-wrap');
+const forgotBackBtn = document.getElementById('forgot-back-btn');
 const authError = document.getElementById('auth-error');
 const authInfo = document.getElementById('auth-info');
 const verifyPendingBox = document.getElementById('verify-pending-box');
 const pendingEmailLabel = document.getElementById('pending-email-label');
 const pendingBackBtn = document.getElementById('pending-back-btn');
 const pendingResendBtn = document.getElementById('pending-resend-btn');
+
+const summaryTotal = document.getElementById('summary-total');
+const summaryActive = document.getElementById('summary-active');
 
 const createForm = document.getElementById('dash-create-form');
 const createUrlInput = document.getElementById('dash-url-input');
@@ -72,8 +85,12 @@ const statsCodeLabel = document.getElementById('stats-code-label');
 const statsDaysSelect = document.getElementById('stats-days-select');
 const statsError = document.getElementById('stats-error');
 const statsTotalClicks = document.getElementById('stats-total-clicks');
+const statsAvgClicks = document.getElementById('stats-avg-clicks');
+const statsTopDevice = document.getElementById('stats-top-device');
 const timelineCanvas = document.getElementById('chart-timeline');
 const devicesCanvas = document.getElementById('chart-devices');
+const devicesCanvasWrap = document.getElementById('devices-canvas-wrap');
+const devicesEmpty = document.getElementById('devices-empty');
 const referrersList = document.getElementById('stats-referrers');
 const countriesList = document.getElementById('stats-countries');
 
@@ -83,12 +100,19 @@ const editCodeLabel = document.getElementById('edit-code-label');
 const editUrlInput = document.getElementById('edit-url-input');
 const editError = document.getElementById('edit-error');
 const editCancelBtn = document.getElementById('edit-cancel-btn');
+const editSaveBtn = document.getElementById('edit-save-btn');
 
 const qrModal = document.getElementById('qr-modal');
 const qrCodeLabel = document.getElementById('qr-code-label');
 const modalQrCanvas = document.getElementById('modal-qr-canvas');
 const qrCloseBtn = document.getElementById('qr-close-btn');
 const qrDownloadBtn = document.getElementById('qr-download-btn');
+
+const deactivateModal = document.getElementById('deactivate-modal');
+const deactivateCodeLabel = document.getElementById('deactivate-code-label');
+const deactivateError = document.getElementById('deactivate-error');
+const deactivateCancelBtn = document.getElementById('deactivate-cancel-btn');
+const deactivateConfirmBtn = document.getElementById('deactivate-confirm-btn');
 
 const deleteModal = document.getElementById('delete-account-modal');
 const keepLinksCheckbox = document.getElementById('keep-links-checkbox');
@@ -107,30 +131,45 @@ const accountError = document.getElementById('account-error');
 const accountCancelBtn = document.getElementById('account-cancel-btn');
 const accountSaveBtn = document.getElementById('account-save-btn');
 
+const modalCtrl = createModalController([
+  editModal,
+  qrModal,
+  deactivateModal,
+  deleteModal,
+  accountModal,
+]);
+
 let authMode = 'login';
 let pendingEmail = '';
 let authTurnstileCtrl = { enabled: false, getToken: () => '', reset: () => {} };
+let cachedLinks = [];
 let selectedStatsCode = null;
+let lastStatsPayload = null;
+let lastStatsDays = 7;
 let editingCode = null;
+let deactivatingCode = null;
 let qrCurrentCode = null;
 let timelineChart = null;
 let devicesChart = null;
 
 initThemeToggle(themeBtn);
 initPasswordToggles();
+getPublicConfig().then((cfg) => applyPortfolioVisibility(cfg));
 mountTurnstile(authTurnstileEl).then((ctrl) => {
   authTurnstileCtrl = ctrl;
   updateAuthUI();
 });
 
-function setBoxError(box, msg) {
+function setBoxError(box, msg, relatedInput = null) {
   if (!msg) {
     box.hidden = true;
     box.textContent = '';
+    if (relatedInput) relatedInput.removeAttribute('aria-invalid');
     return;
   }
   box.textContent = msg;
   box.hidden = false;
+  if (relatedInput) relatedInput.setAttribute('aria-invalid', 'true');
 }
 
 function syncView() {
@@ -139,18 +178,18 @@ function syncView() {
   appSection.hidden = !loggedIn;
   accountOpenBtn.hidden = !loggedIn;
   logoutBtn.hidden = !loggedIn;
-  deleteAccOpenBtn.hidden = !loggedIn;
 
   if (!loggedIn) {
     statsSection.hidden = true;
     selectedStatsCode = null;
+    lastStatsPayload = null;
     destroyCharts();
   }
 }
 
 onUnauthorized(() => {
   syncView();
-  setBoxError(authError, 'Sessão expirada. Faça login novamente.');
+  setBoxError(authError, 'Sua sessão expirou. Entre novamente para continuar.');
 });
 
 function updateAuthUI() {
@@ -159,36 +198,51 @@ function updateAuthUI() {
   authInfo.hidden = true;
   setBoxError(authError, '');
 
+  const isLogin = authMode === 'login';
   const isRegister = authMode === 'register';
   const isForgot = authMode === 'forgot';
 
-  tabLogin.classList.toggle('active', authMode === 'login');
+  authTabs.hidden = isForgot;
+  tabLogin.classList.toggle('active', isLogin);
   tabRegister.classList.toggle('active', isRegister);
+  tabLogin.setAttribute('aria-selected', String(isLogin));
+  tabRegister.setAttribute('aria-selected', String(isRegister));
+  tabLogin.tabIndex = isLogin ? 0 : -1;
+  tabRegister.tabIndex = isRegister ? 0 : -1;
+  authForm.setAttribute('aria-labelledby', isRegister ? 'tab-register' : 'tab-login');
 
   authNameField.hidden = !isRegister;
   authPasswordField.hidden = isForgot;
   authPassword.required = !isForgot;
   authPasswordConfirmField.hidden = !isRegister;
   authPasswordConfirm.required = isRegister;
+  forgotToggleBtn.hidden = !isLogin;
+  forgotBackWrap.hidden = !isForgot;
   authTurnstileEl.hidden = !((isRegister || isForgot) && authTurnstileCtrl.enabled);
 
-  if (authMode === 'login') {
+  if (isLogin) {
+    authHeading.textContent = 'Acesse sua conta';
+    authSubtitle.textContent = 'Gerencie seus links, altere destinos e acompanhe os cliques.';
     authSubmitBtn.textContent = 'Entrar';
     authPassword.setAttribute('autocomplete', 'current-password');
-    forgotToggleBtn.textContent = 'Esqueci minha senha';
   } else if (isRegister) {
-    authSubmitBtn.textContent = 'Criar Conta';
+    authHeading.textContent = 'Crie sua conta';
+    authSubtitle.textContent = 'Gratuito para gerenciar seus links e visualizar estatísticas.';
+    authSubmitBtn.textContent = 'Criar conta';
     authPassword.setAttribute('autocomplete', 'new-password');
-    forgotToggleBtn.textContent = 'Esqueci minha senha';
   } else {
+    authHeading.textContent = 'Recuperar senha';
+    authSubtitle.textContent = 'Informe seu e-mail para receber o link de redefinição.';
     authSubmitBtn.textContent = 'Enviar link de recuperação';
-    forgotToggleBtn.textContent = 'Voltar para o login';
   }
 }
 
 function showPendingVerification(email) {
   pendingEmail = email;
   pendingEmailLabel.textContent = email;
+  authHeading.textContent = 'Verifique sua caixa de entrada';
+  authSubtitle.textContent = 'Falta só confirmar seu endereço de e-mail.';
+  authTabs.hidden = true;
   authForm.hidden = true;
   verifyPendingBox.hidden = false;
   setBoxError(authError, '');
@@ -219,9 +273,30 @@ tabRegister.addEventListener('click', () => {
   updateAuthUI();
 });
 
+authTabs.addEventListener('keydown', (event) => {
+  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+  event.preventDefault();
+  if (event.key === 'Home' || (event.key === 'ArrowLeft' && authMode === 'register') || (event.key === 'ArrowRight' && authMode === 'register')) {
+    authMode = 'login';
+    updateAuthUI();
+    tabLogin.focus();
+  } else {
+    authMode = 'register';
+    updateAuthUI();
+    tabRegister.focus();
+  }
+});
+
 forgotToggleBtn.addEventListener('click', () => {
-  authMode = authMode === 'forgot' ? 'login' : 'forgot';
+  authMode = 'forgot';
   updateAuthUI();
+  authEmail.focus();
+});
+
+forgotBackBtn.addEventListener('click', () => {
+  authMode = 'login';
+  updateAuthUI();
+  authEmail.focus();
 });
 
 pendingBackBtn.addEventListener('click', () => {
@@ -251,12 +326,13 @@ authForm.addEventListener('submit', async (event) => {
   const email = authEmail.value.trim();
   const password = authPassword.value;
   authSubmitBtn.disabled = true;
+  authForm.setAttribute('aria-busy', 'true');
 
   try {
     if (authMode === 'register') {
       if (password !== authPasswordConfirm.value) {
-        setBoxError(authError, 'As senhas não coincidem.');
-        authSubmitBtn.disabled = false;
+        setBoxError(authError, 'As senhas não coincidem.', authPasswordConfirm);
+        authPasswordConfirm.focus();
         return;
       }
       await register(email, password, authName.value, authTurnstileCtrl.getToken());
@@ -269,7 +345,7 @@ authForm.addEventListener('submit', async (event) => {
     if (authMode === 'forgot') {
       await forgotPassword(email, authTurnstileCtrl.getToken());
       authTurnstileCtrl.reset();
-      authInfo.textContent = 'Se o e-mail existir, enviamos as instruções para redefinir sua senha.';
+      authInfo.textContent = 'Se o e-mail estiver cadastrado, enviamos as instruções para redefinir sua senha.';
       authInfo.hidden = false;
       return;
     }
@@ -287,6 +363,7 @@ authForm.addEventListener('submit', async (event) => {
     }
   } finally {
     authSubmitBtn.disabled = false;
+    authForm.removeAttribute('aria-busy');
   }
 });
 
@@ -296,12 +373,15 @@ logoutBtn.addEventListener('click', async () => {
   showToast(toastEl, 'Sessão encerrada.');
 });
 
-async function copyUrl(text) {
+async function copyUrl(text, triggerBtn = null) {
   try {
     await navigator.clipboard.writeText(text);
-    showToast(toastEl, 'Link copiado.');
+    if (triggerBtn) {
+      flashButtonLabel(triggerBtn, 'Copiado!');
+    }
+    showToast(toastEl, 'Link copiado para a área de transferência.');
   } catch {
-    showToast(toastEl, 'Não foi possível copiar.');
+    showToast(toastEl, 'Não foi possível copiar automaticamente.');
   }
 }
 
@@ -309,21 +389,38 @@ function openEditModal(link) {
   editingCode = link.short_code;
   editCodeLabel.textContent = link.short_code;
   editUrlInput.value = link.original_url;
-  setBoxError(editError, '');
-  editModal.hidden = false;
+  setBoxError(editError, '', editUrlInput);
+  modalCtrl.open(editModal, { initialFocus: editUrlInput });
 }
 
 async function openQrModal(code) {
   qrCurrentCode = code;
   qrCodeLabel.textContent = code;
-  qrModal.hidden = false;
+  modalQrCanvas.setAttribute('aria-label', `QR Code do link curto ${code}`);
+  modalCtrl.open(qrModal, { initialFocus: qrDownloadBtn });
   await renderQRCode(modalQrCanvas, buildShortUrl(code), 220);
 }
 
+function openDeactivateModal(code) {
+  deactivatingCode = code;
+  deactivateCodeLabel.textContent = code;
+  setBoxError(deactivateError, '');
+  modalCtrl.open(deactivateModal, { initialFocus: deactivateCancelBtn });
+}
+
+function updateSummaryCounters(links) {
+  const list = Array.isArray(links) ? links : [];
+  const activeCount = list.filter((l) => l.is_active).length;
+  summaryTotal.textContent = list.length.toLocaleString('pt-BR');
+  summaryActive.textContent = activeCount.toLocaleString('pt-BR');
+}
+
 function renderLinksTable(links) {
+  cachedLinks = Array.isArray(links) ? links : [];
+  updateSummaryCounters(cachedLinks);
   clearElement(linksTbody);
 
-  if (!Array.isArray(links) || links.length === 0) {
+  if (cachedLinks.length === 0) {
     linksEmpty.hidden = false;
     linksTableWrap.hidden = true;
     statsSection.hidden = true;
@@ -333,37 +430,54 @@ function renderLinksTable(links) {
   linksEmpty.hidden = true;
   linksTableWrap.hidden = false;
 
-  for (const link of links) {
+  for (const link of cachedLinks) {
     const shortUrl = buildShortUrl(link.short_code);
+    const isSelected = selectedStatsCode === link.short_code;
+
     const statusPill = el('span', {
       className: `status-pill ${link.is_active ? 'status-active' : 'status-inactive'}`,
       text: link.is_active ? 'Ativo' : 'Inativo',
     });
 
+    const copyBtn = el('button', {
+      type: 'button',
+      className: 'btn btn-secondary btn-sm',
+      text: 'Copiar',
+      attrs: { 'aria-label': `Copiar link curto ${link.short_code}` },
+    });
+    copyBtn.addEventListener('click', () => copyUrl(shortUrl, copyBtn));
+
+    const statsBtn = el('button', {
+      type: 'button',
+      className: isSelected ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm',
+      text: 'Métricas',
+      attrs: {
+        'aria-label': `Ver estatísticas do link ${link.short_code}`,
+        'aria-pressed': String(isSelected),
+      },
+      onClick: () => loadStats(link.short_code),
+    });
+
     const tr = el(
       'tr',
-      {},
-      el('td', {}, createSafeAnchor(shortUrl, link.short_code)),
+      { className: isSelected ? 'row-selected' : '' },
+      el('td', { attrs: { 'data-label': 'Link curto' } }, createSafeAnchor(shortUrl, link.short_code, 'short-code-link')),
       el(
         'td',
-        { className: 'url-cell', title: link.original_url },
+        { className: 'url-cell', title: link.original_url, attrs: { 'data-label': 'URL de destino' } },
         createSafeAnchor(link.original_url, link.original_url)
       ),
-      el('td', {}, statusPill),
-      el('td', { text: formatDate(link.created_at) }),
+      el('td', { attrs: { 'data-label': 'Status' } }, statusPill),
+      el('td', { className: 'date-cell', text: formatDate(link.created_at), attrs: { 'data-label': 'Criado em' } }),
       el(
         'td',
         { className: 'actions-cell' },
+        copyBtn,
         el('button', {
           type: 'button',
           className: 'btn btn-secondary btn-sm',
-          text: 'Copiar',
-          onClick: () => copyUrl(shortUrl),
-        }),
-        el('button', {
-          type: 'button',
-          className: 'btn btn-secondary btn-sm',
-          text: 'QR',
+          text: 'QR Code',
+          attrs: { 'aria-label': `Abrir QR Code do link ${link.short_code}` },
           onClick: () => openQrModal(link.short_code),
         }),
         link.is_active
@@ -371,21 +485,18 @@ function renderLinksTable(links) {
               type: 'button',
               className: 'btn btn-secondary btn-sm',
               text: 'Editar',
+              attrs: { 'aria-label': `Editar destino do link ${link.short_code}` },
               onClick: () => openEditModal(link),
             })
           : null,
-        el('button', {
-          type: 'button',
-          className: 'btn btn-primary btn-sm',
-          text: 'Stats',
-          onClick: () => loadStats(link.short_code),
-        }),
+        statsBtn,
         link.is_active
           ? el('button', {
               type: 'button',
-              className: 'btn btn-danger btn-sm',
+              className: 'btn btn-danger-outline btn-sm',
               text: 'Desativar',
-              onClick: () => handleDeactivateLink(link.short_code),
+              attrs: { 'aria-label': `Desativar link ${link.short_code}` },
+              onClick: () => openDeactivateModal(link.short_code),
             })
           : null
       )
@@ -395,18 +506,25 @@ function renderLinksTable(links) {
 }
 
 async function loadLinks() {
+  refreshLinksBtn.disabled = true;
   try {
     const links = await listMyLinks();
-    renderLinksTable(links);
     if (links && links.length > 0) {
       const targetCode =
         selectedStatsCode && links.some((l) => l.short_code === selectedStatsCode)
           ? selectedStatsCode
           : links[0].short_code;
+      selectedStatsCode = targetCode;
+      renderLinksTable(links);
       await loadStats(targetCode);
+    } else {
+      selectedStatsCode = null;
+      renderLinksTable([]);
     }
   } catch (err) {
     showToast(toastEl, err.message || 'Erro ao carregar links.');
+  } finally {
+    refreshLinksBtn.disabled = false;
   }
 }
 
@@ -421,64 +539,142 @@ function destroyCharts() {
   }
 }
 
-function buildDateLabels(days) {
-  const labels = [];
+function buildDateRange(days) {
+  const iso = [];
+  const display = [];
   const now = new Date();
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - i));
-    labels.push(d.toISOString().slice(0, 10));
+    iso.push(d.toISOString().slice(0, 10));
+    const dd = String(d.getUTCDate()).padStart(2, '0');
+    const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+    display.push(`${dd}/${mm}`);
   }
-  return labels;
+  return { iso, display };
 }
 
 function renderBreakdownList(listEl, dataMap, emptyLabel) {
   clearElement(listEl);
-  const entries = Object.entries(dataMap || {}).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  const entries = Object.entries(dataMap || {})
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8);
+
   if (entries.length === 0) {
     listEl.appendChild(el('li', { className: 'muted', text: emptyLabel }));
     return;
   }
+
+  const maxVal = Math.max(...entries.map(([, count]) => count), 1);
+
   for (const [key, count] of entries) {
+    const pct = Math.max(4, Math.round((count / maxVal) * 100));
+    const fill = el('div', { className: 'breakdown-bar-fill' });
+    fill.style.width = `${pct}%`;
+
     listEl.appendChild(
-      el('li', {}, el('span', { text: key }), el('strong', { text: String(count) }))
+      el(
+        'li',
+        { className: 'breakdown-item' },
+        el(
+          'div',
+          { className: 'breakdown-row' },
+          el('span', { className: 'breakdown-name', text: key, title: key }),
+          el('span', { className: 'breakdown-count', text: count.toLocaleString('pt-BR') })
+        ),
+        el('div', { className: 'breakdown-bar-track', attrs: { 'aria-hidden': 'true' } }, fill)
+      )
     );
   }
+}
+
+function getChartThemeTokens() {
+  const dark = isDarkTheme();
+  return {
+    accent: dark ? '#2fbf8c' : '#0f5c47',
+    text: dark ? '#f2f1ed' : '#181715',
+    muted: dark ? '#9e9b93' : '#5c5852',
+    grid: dark ? '#2e2d29' : '#e2dfd7',
+    surface: dark ? '#191917' : '#ffffff',
+    palette: dark
+      ? ['#2fbf8c', '#e68a4d', '#5c9ce6', '#b28ce2', '#8a867e']
+      : ['#0f5c47', '#9a3f0c', '#1d4ed8', '#6d28d9', '#78716c'],
+  };
 }
 
 function renderCharts(stats, days) {
   if (typeof window.Chart === 'undefined') return;
   destroyCharts();
 
-  const labels = buildDateLabels(days);
-  const dateCounts = labels.map((day) => (stats.clicks_by_date && stats.clicks_by_date[day]) || 0);
+  const theme = getChartThemeTokens();
+  const { iso, display } = buildDateRange(days);
+  const dateCounts = iso.map((day) => (stats.clicks_by_date && stats.clicks_by_date[day]) || 0);
+  const totalInRange = dateCounts.reduce((acc, n) => acc + n, 0);
+
+  timelineCanvas.setAttribute(
+    'aria-label',
+    `Gráfico de cliques nos últimos ${days} dias: total de ${totalInRange} cliques.`
+  );
 
   timelineChart = new window.Chart(timelineCanvas.getContext('2d'), {
     type: 'line',
     data: {
-      labels,
+      labels: display,
       datasets: [
         {
-          label: 'Cliques por dia',
+          label: 'Cliques',
           data: dateCounts,
-          borderColor: '#0ea5e9',
-          backgroundColor: 'rgba(14, 165, 233, 0.16)',
-          tension: 0.25,
-          fill: true,
+          borderColor: theme.accent,
+          backgroundColor: theme.accent,
+          borderWidth: 2,
+          pointRadius: 3,
+          pointHoverRadius: 5,
+          pointBackgroundColor: theme.accent,
+          tension: 0.15,
+          fill: false,
         },
       ],
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: theme.surface,
+          titleColor: theme.text,
+          bodyColor: theme.text,
+          borderColor: theme.grid,
+          borderWidth: 1,
+        },
+      },
       scales: {
-        y: { beginAtZero: true, ticks: { precision: 0 } },
+        x: {
+          grid: { display: false },
+          ticks: { color: theme.muted, maxRotation: 0, autoSkipPadding: 14 },
+        },
+        y: {
+          beginAtZero: true,
+          grid: { color: theme.grid },
+          ticks: { color: theme.muted, precision: 0 },
+        },
       },
     },
   });
 
-  const deviceEntries = Object.entries(stats.clicks_by_device || {});
-  const deviceLabels = deviceEntries.length ? deviceEntries.map(([k]) => k) : ['sem dados'];
-  const deviceValues = deviceEntries.length ? deviceEntries.map(([, v]) => v) : [0];
+  const deviceEntries = Object.entries(stats.clicks_by_device || {}).filter(([, v]) => v > 0);
+  if (deviceEntries.length === 0) {
+    devicesCanvasWrap.hidden = true;
+    devicesEmpty.hidden = false;
+    return;
+  }
+
+  devicesCanvasWrap.hidden = false;
+  devicesEmpty.hidden = true;
+
+  const deviceLabels = deviceEntries.map(([k]) => k);
+  const deviceValues = deviceEntries.map(([, v]) => v);
+  const deviceSummary = deviceEntries.map(([k, v]) => `${k}: ${v}`).join(', ');
+  devicesCanvas.setAttribute('aria-label', `Distribuição por dispositivo: ${deviceSummary}.`);
 
   devicesChart = new window.Chart(devicesCanvas.getContext('2d'), {
     type: 'doughnut',
@@ -487,19 +683,50 @@ function renderCharts(stats, days) {
       datasets: [
         {
           data: deviceValues,
-          backgroundColor: ['#0ea5e9', '#22c55e', '#f59e0b', '#94a3b8'],
+          backgroundColor: theme.palette,
+          borderColor: theme.surface,
+          borderWidth: 2,
         },
       ],
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      cutout: '62%',
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: {
+            color: theme.text,
+            boxWidth: 12,
+            padding: 14,
+          },
+        },
+        tooltip: {
+          backgroundColor: theme.surface,
+          titleColor: theme.text,
+          bodyColor: theme.text,
+          borderColor: theme.grid,
+          borderWidth: 1,
+        },
+      },
     },
   });
 }
 
+document.addEventListener('esmaga:themechange', () => {
+  if (lastStatsPayload && !statsSection.hidden) {
+    renderCharts(lastStatsPayload, lastStatsDays);
+  }
+});
+
 async function loadStats(code) {
+  const prevCode = selectedStatsCode;
   selectedStatsCode = code;
+  if (prevCode !== code && cachedLinks.length > 0) {
+    renderLinksTable(cachedLinks);
+  }
+
   const days = Number(statsDaysSelect.value) || 7;
   statsSection.hidden = false;
   statsCodeLabel.textContent = code;
@@ -507,10 +734,21 @@ async function loadStats(code) {
 
   try {
     const stats = await getLinkStats(code, days);
-    statsTotalClicks.textContent = String(stats.total_clicks ?? 0);
+    lastStatsPayload = stats;
+    lastStatsDays = days;
+
+    const total = Number(stats.total_clicks ?? 0);
+    statsTotalClicks.textContent = total.toLocaleString('pt-BR');
+    statsAvgClicks.textContent = (total / days).toLocaleString('pt-BR', {
+      maximumFractionDigits: 1,
+    });
+
+    const topDeviceEntry = Object.entries(stats.clicks_by_device || {}).sort((a, b) => b[1] - a[1])[0];
+    statsTopDevice.textContent = topDeviceEntry && topDeviceEntry[1] > 0 ? topDeviceEntry[0] : '—';
+
     renderCharts(stats, days);
-    renderBreakdownList(referrersList, stats.top_referrers, 'Nenhum referrer registrado');
-    renderBreakdownList(countriesList, stats.clicks_by_country, 'Nenhum país registrado');
+    renderBreakdownList(referrersList, stats.top_referrers, 'Nenhuma origem registrada neste período');
+    renderBreakdownList(countriesList, stats.clicks_by_country, 'Nenhum país registrado neste período');
   } catch (err) {
     setBoxError(statsError, err.message || 'Erro ao carregar estatísticas.');
   }
@@ -518,15 +756,18 @@ async function loadStats(code) {
 
 createForm.addEventListener('submit', async (event) => {
   event.preventDefault();
-  setBoxError(createError, '');
+  setBoxError(createError, '', createUrlInput);
 
   const rawUrl = createUrlInput.value.trim();
   if (!isSafeHttpUrl(rawUrl)) {
-    setBoxError(createError, 'Informe uma URL válida iniciando com http:// ou https://');
+    setBoxError(createError, 'Informe uma URL válida iniciando com http:// ou https://', createUrlInput);
+    createUrlInput.focus();
     return;
   }
 
   createBtn.disabled = true;
+  createBtn.textContent = 'Criando...';
+  createForm.setAttribute('aria-busy', 'true');
   try {
     const created = await createLink(rawUrl);
     createUrlInput.value = '';
@@ -537,6 +778,14 @@ createForm.addEventListener('submit', async (event) => {
     setBoxError(createError, err.message || 'Erro ao criar link.');
   } finally {
     createBtn.disabled = false;
+    createBtn.textContent = 'Criar link';
+    createForm.removeAttribute('aria-busy');
+  }
+});
+
+createUrlInput.addEventListener('input', () => {
+  if (!createError.hidden) {
+    setBoxError(createError, '', createUrlInput);
   }
 });
 
@@ -549,61 +798,80 @@ statsDaysSelect.addEventListener('change', () => {
 });
 
 editCancelBtn.addEventListener('click', () => {
-  editModal.hidden = true;
+  modalCtrl.close(editModal);
 });
 
 editForm.addEventListener('submit', async (event) => {
   event.preventDefault();
-  setBoxError(editError, '');
+  setBoxError(editError, '', editUrlInput);
 
   const nextUrl = editUrlInput.value.trim();
   if (!isSafeHttpUrl(nextUrl)) {
-    setBoxError(editError, 'Informe uma URL válida iniciando com http:// ou https://');
+    setBoxError(editError, 'Informe uma URL válida iniciando com http:// ou https://', editUrlInput);
+    editUrlInput.focus();
     return;
   }
 
+  editSaveBtn.disabled = true;
+  editSaveBtn.textContent = 'Salvando...';
   try {
     await editLink(editingCode, nextUrl);
-    editModal.hidden = true;
+    modalCtrl.close(editModal);
     await loadLinks();
     showToast(toastEl, 'URL de destino atualizada.');
   } catch (err) {
     setBoxError(editError, err.message || 'Erro ao editar link.');
+  } finally {
+    editSaveBtn.disabled = false;
+    editSaveBtn.textContent = 'Salvar destino';
   }
 });
 
 qrCloseBtn.addEventListener('click', () => {
-  qrModal.hidden = true;
+  modalCtrl.close(qrModal);
 });
 
 qrDownloadBtn.addEventListener('click', () => {
   if (qrCurrentCode) {
     downloadQRCodePNG(modalQrCanvas, qrCurrentCode);
+    showToast(toastEl, 'Download do QR Code iniciado.');
   }
 });
 
-async function handleDeactivateLink(code) {
-  if (!window.confirm(`Desativar o link ${code}? Ele deixará de redirecionar imediatamente.`)) {
-    return;
-  }
+deactivateCancelBtn.addEventListener('click', () => {
+  modalCtrl.close(deactivateModal);
+});
+
+deactivateConfirmBtn.addEventListener('click', async () => {
+  if (!deactivatingCode) return;
+  setBoxError(deactivateError, '');
+  deactivateConfirmBtn.disabled = true;
+  deactivateConfirmBtn.textContent = 'Desativando...';
   try {
-    await deleteLink(code);
+    await deleteLink(deactivatingCode);
+    const code = deactivatingCode;
+    deactivatingCode = null;
+    modalCtrl.close(deactivateModal);
     showToast(toastEl, `Link ${code} desativado.`);
     await loadLinks();
   } catch (err) {
-    showToast(toastEl, err.message || 'Erro ao desativar link.');
+    setBoxError(deactivateError, err.message || 'Erro ao desativar link.');
+  } finally {
+    deactivateConfirmBtn.disabled = false;
+    deactivateConfirmBtn.textContent = 'Desativar link';
   }
-}
+});
 
 accountOpenBtn.addEventListener('click', async () => {
   setBoxError(accountError, '');
   accountCurrentPass.value = '';
   accountNewPass.value = '';
   accountNewPassConfirm.value = '';
-  accountModal.hidden = false;
+  modalCtrl.open(accountModal, { initialFocus: accountNameInput });
   try {
     const me = await getMe();
-    accountEmailLabel.textContent = `${me.email} (${me.status})`;
+    const statusLabel = me.status === 'active' ? 'Ativa' : me.status;
+    accountEmailLabel.textContent = `${me.email} • ${statusLabel}`;
     accountNameInput.value = me.name || '';
   } catch (err) {
     setBoxError(accountError, err.message || 'Erro ao carregar perfil.');
@@ -611,18 +879,19 @@ accountOpenBtn.addEventListener('click', async () => {
 });
 
 accountCancelBtn.addEventListener('click', () => {
-  accountModal.hidden = true;
+  modalCtrl.close(accountModal);
 });
 
 accountForm.addEventListener('submit', async (event) => {
   event.preventDefault();
-  setBoxError(accountError, '');
+  setBoxError(accountError, '', accountNewPassConfirm);
   accountSaveBtn.disabled = true;
 
   const payload = { name: accountNameInput.value.trim() };
   if (accountNewPass.value) {
     if (accountNewPass.value !== accountNewPassConfirm.value) {
-      setBoxError(accountError, 'A nova senha e a confirmação não coincidem.');
+      setBoxError(accountError, 'A nova senha e a confirmação não coincidem.', accountNewPassConfirm);
+      accountNewPassConfirm.focus();
       accountSaveBtn.disabled = false;
       return;
     }
@@ -632,7 +901,7 @@ accountForm.addEventListener('submit', async (event) => {
 
   try {
     await updateMe(payload);
-    accountModal.hidden = true;
+    modalCtrl.close(accountModal);
     showToast(toastEl, 'Perfil atualizado com sucesso.');
   } catch (err) {
     setBoxError(accountError, err.message || 'Erro ao atualizar perfil.');
@@ -644,42 +913,27 @@ accountForm.addEventListener('submit', async (event) => {
 deleteAccOpenBtn.addEventListener('click', () => {
   setBoxError(deleteError, '');
   keepLinksCheckbox.checked = true;
-  deleteModal.hidden = false;
+  modalCtrl.open(deleteModal, { initialFocus: deleteCancelBtn, preserveTrigger: true });
 });
 
 deleteCancelBtn.addEventListener('click', () => {
-  deleteModal.hidden = true;
+  modalCtrl.close(deleteModal);
 });
 
 deleteConfirmBtn.addEventListener('click', async () => {
   setBoxError(deleteError, '');
   deleteConfirmBtn.disabled = true;
+  deleteConfirmBtn.textContent = 'Excluindo...';
   try {
     await deleteAccount(keepLinksCheckbox.checked);
-    deleteModal.hidden = true;
+    modalCtrl.close(deleteModal, { restoreFocus: false });
     syncView();
     showToast(toastEl, 'Conta excluída com sucesso.');
   } catch (err) {
     setBoxError(deleteError, err.message || 'Erro ao excluir conta.');
   } finally {
     deleteConfirmBtn.disabled = false;
-  }
-});
-
-for (const modal of [editModal, qrModal, deleteModal, accountModal]) {
-  modal.addEventListener('click', (event) => {
-    if (event.target === modal) {
-      modal.hidden = true;
-    }
-  });
-}
-
-document.addEventListener('keydown', (event) => {
-  if (event.key !== 'Escape') return;
-  for (const modal of [editModal, qrModal, deleteModal, accountModal]) {
-    if (!modal.hidden) {
-      modal.hidden = true;
-    }
+    deleteConfirmBtn.textContent = 'Excluir minha conta';
   }
 });
 

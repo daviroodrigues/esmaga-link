@@ -227,6 +227,13 @@ export async function editLink(code, originalUrl) {
   });
 }
 
+export async function setLinkStatus(code, isActive) {
+  return apiFetch(`/api/v1/links/${encodeURIComponent(code)}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ is_active: Boolean(isActive) }),
+  });
+}
+
 export async function deleteLink(code) {
   return apiFetch(`/api/v1/links/${encodeURIComponent(code)}`, {
     method: 'DELETE',

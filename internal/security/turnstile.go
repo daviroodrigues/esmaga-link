@@ -29,8 +29,7 @@ type TurnstileVerifier struct {
 func NewTurnstileVerifier(secretKey, hostnamesCSV string) *TurnstileVerifier {
 	allowed := make(map[string]struct{})
 	for _, raw := range strings.Split(hostnamesCSV, ",") {
-		h := strings.ToLower(strings.TrimSpace(raw))
-		if h != "" {
+		if h := normalizeAllowedHostname(raw); h != "" {
 			allowed[h] = struct{}{}
 		}
 	}
@@ -40,6 +39,23 @@ func NewTurnstileVerifier(secretKey, hostnamesCSV string) *TurnstileVerifier {
 		verifyURL:        defaultTurnstileVerifyURL,
 		client:           &http.Client{Timeout: 10 * time.Second},
 	}
+}
+
+func normalizeAllowedHostname(raw string) string {
+	h := strings.TrimSpace(raw)
+	if h == "" {
+		return ""
+	}
+	if strings.Contains(h, "://") {
+		if parsed, err := url.Parse(h); err == nil && parsed.Hostname() != "" {
+			h = parsed.Hostname()
+		}
+	}
+	h = strings.TrimSuffix(h, "/")
+	if host, _, err := net.SplitHostPort(h); err == nil {
+		h = host
+	}
+	return strings.ToLower(strings.TrimSpace(h))
 }
 
 func (v *TurnstileVerifier) Enabled() bool {

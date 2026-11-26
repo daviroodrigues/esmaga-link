@@ -84,4 +84,10 @@ func TestTurnstileVerifier_Verify(t *testing.T) {
 	if err := noHosts.Verify(context.Background(), "valid-token", "127.0.0.1", "create_link"); err == nil {
 		t.Fatal("esperava erro quando TURNSTILE_HOSTNAMES está vazio")
 	}
+
+	urlHosts := NewTurnstileVerifier("sec-123", "https://localhost:8080/, https://esmaga.adomtech.com.br")
+	urlHosts.verifyURL = srv.URL
+	if err := urlHosts.Verify(context.Background(), "valid-token", "127.0.0.1", "create_link"); err != nil {
+		t.Fatalf("esperava sucesso ao normalizar URL em TURNSTILE_HOSTNAMES, obteve %v", err)
+	}
 }

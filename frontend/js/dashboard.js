@@ -15,6 +15,7 @@ import {
   register,
   resendVerification,
   restoreSession,
+  setLinkStatus,
   updateMe,
 } from './api.js';
 import { downloadQRCodePNG, renderQRCode } from './qrcode.js';
@@ -109,11 +110,11 @@ const modalQrCanvas = document.getElementById('modal-qr-canvas');
 const qrCloseBtn = document.getElementById('qr-close-btn');
 const qrDownloadBtn = document.getElementById('qr-download-btn');
 
-const deactivateModal = document.getElementById('deactivate-modal');
-const deactivateCodeLabel = document.getElementById('deactivate-code-label');
-const deactivateError = document.getElementById('deactivate-error');
-const deactivateCancelBtn = document.getElementById('deactivate-cancel-btn');
-const deactivateConfirmBtn = document.getElementById('deactivate-confirm-btn');
+const deleteLinkModal = document.getElementById('delete-link-modal');
+const deleteLinkCodeLabel = document.getElementById('delete-link-code-label');
+const deleteLinkError = document.getElementById('delete-link-error');
+const deleteLinkCancelBtn = document.getElementById('delete-link-cancel-btn');
+const deleteLinkConfirmBtn = document.getElementById('delete-link-confirm-btn');
 
 const deleteModal = document.getElementById('delete-account-modal');
 const keepLinksCheckbox = document.getElementById('keep-links-checkbox');
@@ -135,7 +136,7 @@ const accountSaveBtn = document.getElementById('account-save-btn');
 const modalCtrl = createModalController([
   editModal,
   qrModal,
-  deactivateModal,
+  deleteLinkModal,
   deleteModal,
   accountModal,
 ]);
@@ -149,7 +150,8 @@ let selectedStatsCode = null;
 let lastStatsPayload = null;
 let lastStatsDays = 7;
 let editingCode = null;
-let deactivatingCode = null;
+let deletingLinkCode = null;
+let deleteLinkCountdownTimer = null;
 let qrCurrentCode = null;
 let timelineChart = null;
 let devicesChart = null;
@@ -342,6 +344,10 @@ authForm.addEventListener('submit', async (event) => {
         authPasswordConfirm.focus();
         return;
       }
+      if (registerTurnstileCtrl.enabled && !registerTurnstileCtrl.getToken()) {
+        setBoxError(authError, 'Aguarde a verificação anti-bot concluir e tente novamente.');
+        return;
+      }
       await register(email, password, authName.value, registerTurnstileCtrl.getToken());
       authPassword.value = '';
       authPasswordConfirm.value = '';
@@ -350,6 +356,10 @@ authForm.addEventListener('submit', async (event) => {
       return;
     }
     if (authMode === 'forgot') {
+      if (forgotTurnstileCtrl.enabled && !forgotTurnstileCtrl.getToken()) {
+        setBoxError(authError, 'Aguarde a verificação anti-bot concluir e tente novamente.');
+        return;
+      }
       await forgotPassword(email, forgotTurnstileCtrl.getToken());
       forgotTurnstileCtrl.reset();
       authInfo.textContent = 'Se o e-mail estiver cadastrado, enviamos as instruções para redefinir sua senha.';
@@ -412,11 +422,55 @@ async function openQrModal(code) {
   await renderQRCode(modalQrCanvas, buildShortUrl(code), 220);
 }
 
-function openDeactivateModal(code) {
-  deactivatingCode = code;
-  deactivateCodeLabel.textContent = code;
-  setBoxError(deactivateError, '');
-  modalCtrl.open(deactivateModal, { initialFocus: deactivateCancelBtn });
+function clearDeleteLinkCountdown() {
+  if (deleteLinkCountdownTimer) {
+    clearInterval(deleteLinkCountdownTimer);
+    deleteLinkCountdownTimer = null;
+  }
+}
+
+function openDeleteLinkModal(code) {
+  clearDeleteLinkCountdown();
+  deletingLinkCode = code;
+  deleteLinkCodeLabel.textContent = code;
+  setBoxError(deleteLinkError, '');
+
+  let remaining = 3;
+  deleteLinkConfirmBtn.disabled = true;
+  deleteLinkConfirmBtn.textContent = `Aguarde ${remaining}s`;
+
+  modalCtrl.open(deleteLinkModal, { initialFocus: deleteLinkCancelBtn });
+
+  deleteLinkCountdownTimer = setInterval(() => {
+    if (deleteLinkModal.hidden) {
+      clearDeleteLinkCountdown();
+      deleteLinkConfirmBtn.textContent = 'Excluir permanentemente';
+      return;
+    }
+    remaining -= 1;
+    if (remaining <= 0) {
+      clearDeleteLinkCountdown();
+      deleteLinkConfirmBtn.disabled = false;
+      deleteLinkConfirmBtn.textContent = 'Excluir permanentemente';
+      return;
+    }
+    deleteLinkConfirmBtn.textContent = `Aguarde ${remaining}s`;
+  }, 1000);
+}
+
+async function handleToggleLinkStatus(link, buttonEl) {
+  const nextActive = !link.is_active;
+  buttonEl.disabled = true;
+  buttonEl.textContent = nextActive ? 'Reativando...' : 'Pausando...';
+  try {
+    await setLinkStatus(link.short_code, nextActive);
+    showToast(toastEl, nextActive ? `Link ${link.short_code} reativado.` : `Link ${link.short_code} pausado.`);
+    await loadLinks();
+  } catch (err) {
+    showToast(toastEl, err.message || 'Erro ao alterar status do link.');
+    buttonEl.disabled = false;
+    buttonEl.textContent = link.is_active ? 'Pausar' : 'Reativar';
+  }
 }
 
 function updateSummaryCounters(links) {
@@ -447,7 +501,7 @@ function renderLinksTable(links) {
 
     const statusPill = el('span', {
       className: `status-pill ${link.is_active ? 'status-active' : 'status-inactive'}`,
-      text: link.is_active ? 'Ativo' : 'Inativo',
+      text: link.is_active ? 'Ativo' : 'Pausado',
     });
 
     const copyBtn = el('button', {
@@ -491,25 +545,32 @@ function renderLinksTable(links) {
           attrs: { 'aria-label': `Abrir QR Code do link ${link.short_code}` },
           onClick: () => openQrModal(link.short_code),
         }),
-        link.is_active
-          ? el('button', {
-              type: 'button',
-              className: 'btn btn-secondary btn-sm',
-              text: 'Editar',
-              attrs: { 'aria-label': `Editar destino do link ${link.short_code}` },
-              onClick: () => openEditModal(link),
-            })
-          : null,
+        el('button', {
+          type: 'button',
+          className: 'btn btn-secondary btn-sm',
+          text: 'Editar',
+          attrs: { 'aria-label': `Editar destino do link ${link.short_code}` },
+          onClick: () => openEditModal(link),
+        }),
         statsBtn,
-        link.is_active
-          ? el('button', {
-              type: 'button',
-              className: 'btn btn-danger-outline btn-sm',
-              text: 'Desativar',
-              attrs: { 'aria-label': `Desativar link ${link.short_code}` },
-              onClick: () => openDeactivateModal(link.short_code),
-            })
-          : null
+        el('button', {
+          type: 'button',
+          className: 'btn btn-secondary btn-sm',
+          text: link.is_active ? 'Pausar' : 'Reativar',
+          attrs: {
+            'aria-label': link.is_active
+              ? `Pausar link ${link.short_code}`
+              : `Reativar link ${link.short_code}`,
+          },
+          onClick: (event) => handleToggleLinkStatus(link, event.currentTarget),
+        }),
+        el('button', {
+          type: 'button',
+          className: 'btn btn-danger-outline btn-sm',
+          text: 'Excluir',
+          attrs: { 'aria-label': `Excluir permanentemente o link ${link.short_code}` },
+          onClick: () => openDeleteLinkModal(link.short_code),
+        })
       )
     );
     linksTbody.appendChild(tr);
@@ -849,27 +910,32 @@ qrDownloadBtn.addEventListener('click', () => {
   }
 });
 
-deactivateCancelBtn.addEventListener('click', () => {
-  modalCtrl.close(deactivateModal);
+deleteLinkCancelBtn.addEventListener('click', () => {
+  clearDeleteLinkCountdown();
+  modalCtrl.close(deleteLinkModal);
 });
 
-deactivateConfirmBtn.addEventListener('click', async () => {
-  if (!deactivatingCode) return;
-  setBoxError(deactivateError, '');
-  deactivateConfirmBtn.disabled = true;
-  deactivateConfirmBtn.textContent = 'Desativando...';
+deleteLinkConfirmBtn.addEventListener('click', async () => {
+  if (!deletingLinkCode) return;
+  clearDeleteLinkCountdown();
+  setBoxError(deleteLinkError, '');
+  deleteLinkConfirmBtn.disabled = true;
+  deleteLinkConfirmBtn.textContent = 'Excluindo...';
   try {
-    await deleteLink(deactivatingCode);
-    const code = deactivatingCode;
-    deactivatingCode = null;
-    modalCtrl.close(deactivateModal);
-    showToast(toastEl, `Link ${code} desativado.`);
+    await deleteLink(deletingLinkCode);
+    const code = deletingLinkCode;
+    deletingLinkCode = null;
+    if (selectedStatsCode === code) {
+      selectedStatsCode = null;
+    }
+    modalCtrl.close(deleteLinkModal);
+    showToast(toastEl, `Link ${code} excluído permanentemente.`);
     await loadLinks();
   } catch (err) {
-    setBoxError(deactivateError, err.message || 'Erro ao desativar link.');
+    setBoxError(deleteLinkError, err.message || 'Erro ao excluir link.');
+    deleteLinkConfirmBtn.disabled = false;
   } finally {
-    deactivateConfirmBtn.disabled = false;
-    deactivateConfirmBtn.textContent = 'Desativar link';
+    deleteLinkConfirmBtn.textContent = 'Excluir permanentemente';
   }
 });
 

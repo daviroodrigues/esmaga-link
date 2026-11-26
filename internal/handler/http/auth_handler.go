@@ -86,7 +86,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.turnstile != nil {
-		if err := h.turnstile.Verify(r.Context(), req.TurnstileToken, r.RemoteAddr, "register"); err != nil {
+		if err := h.turnstile.Verify(r.Context(), req.TurnstileToken, getRealIP(r), "register"); err != nil {
 			writeJSONError(w, http.StatusForbidden, err.Error())
 			return
 		}
@@ -170,7 +170,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tokens, err := h.authService.Login(r.Context(), req.Email, req.Password, r.UserAgent(), r.RemoteAddr)
+	tokens, err := h.authService.Login(r.Context(), req.Email, req.Password, r.UserAgent(), getRealIP(r))
 	if err != nil {
 		status := http.StatusUnauthorized
 		if errors.Is(err, service.ErrEmailNotVerified) || errors.Is(err, service.ErrAccountSuspended) {
@@ -201,7 +201,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tokens, err := h.authService.Refresh(r.Context(), rawToken, r.UserAgent(), r.RemoteAddr)
+	tokens, err := h.authService.Refresh(r.Context(), rawToken, r.UserAgent(), getRealIP(r))
 	if err != nil {
 		writeJSONError(w, http.StatusUnauthorized, err.Error())
 		return
@@ -245,7 +245,7 @@ func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.turnstile != nil {
-		if err := h.turnstile.Verify(r.Context(), req.TurnstileToken, r.RemoteAddr, "forgot_password"); err != nil {
+		if err := h.turnstile.Verify(r.Context(), req.TurnstileToken, getRealIP(r), "forgot_password"); err != nil {
 			writeJSONError(w, http.StatusForbidden, err.Error())
 			return
 		}

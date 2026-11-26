@@ -1907,6 +1907,90 @@ tbody tr:last-child td {
   }
 }
 
+.error-shell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: clamp(2.5rem, 10vh, 5.5rem);
+  padding-bottom: 3.5rem;
+}
+
+.error-card {
+  width: 100%;
+  max-width: 480px;
+  text-align: center;
+  padding: 2.25rem 1.75rem;
+  margin-bottom: 0;
+}
+
+.error-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 1.15rem;
+  border-radius: 50%;
+  background: var(--accent-surface);
+  border: 1px solid var(--border);
+  color: var(--accent-text);
+}
+
+.error-icon svg {
+  width: 26px;
+  height: 26px;
+  display: block;
+}
+
+.error-icon-warn {
+  background: var(--danger-surface);
+  border-color: var(--danger-border);
+  color: var(--danger-text);
+}
+
+.error-code {
+  margin: 0 0 0.4rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.error-title {
+  margin: 0 0 0.65rem;
+  font-size: clamp(1.35rem, 3vw, 1.65rem);
+  font-weight: 750;
+  letter-spacing: -0.025em;
+  line-height: 1.25;
+}
+
+.error-desc {
+  margin: 0 auto 1.6rem;
+  max-width: 38ch;
+  color: var(--text-muted);
+  font-size: 0.94rem;
+  line-height: 1.55;
+}
+
+.error-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 680px) {
+  .error-actions {
+    flex-direction: column;
+  }
+
+  .error-actions .btn {
+    width: 100%;
+  }
+}
+
 @media (max-width: 420px) {
   .short-url-box {
     flex-direction: column;

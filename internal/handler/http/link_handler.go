@@ -28,8 +28,14 @@ type EditLinkResponse struct {
 	OriginalURL string `json:"original_url" example:"https://exemplo.com/novo-destino"`
 }
 
+type UpdateLinkStatusResponse struct {
+	Message   string `json:"message" example:"status do link atualizado com sucesso"`
+	ShortCode string `json:"short_code" example:"aB3x9Z"`
+	IsActive  bool   `json:"is_active" example:"false"`
+}
+
 type DeleteLinkResponse struct {
-	Message   string `json:"message" example:"link desativado com sucesso"`
+	Message   string `json:"message" example:"link excluído permanentemente"`
 	ShortCode string `json:"short_code" example:"aB3x9Z"`
 }
 
@@ -70,7 +76,7 @@ func (h *LinkHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if userID == nil && h.turnstile != nil {
-		if err := h.turnstile.Verify(r.Context(), req.TurnstileToken, r.RemoteAddr, "create_link"); err != nil {
+		if err := h.turnstile.Verify(r.Context(), req.TurnstileToken, getRealIP(r), "create_link"); err != nil {
 			writeJSONError(w, http.StatusForbidden, err.Error())
 			return
 		}
@@ -132,9 +138,61 @@ func (h *LinkHandler) Edit(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// UpdateStatus godoc
+// @Summary		Pausar ou reativar link
+// @Description	Alterna o status ativo/pausado de um link pertencente ao usuário autenticado
+// @Tags			Links
+// @Accept			json
+// @Produce		json
+// @Security		BearerAuth
+// @Param			code	path		string							true	"Código curto do link"
+// @Param			request	body		domain.UpdateLinkStatusRequest	true	"Novo status do link"
+// @Success		200		{object}	UpdateLinkStatusResponse
+// @Failure		400		{object}	ErrorResponse
+// @Failure		401		{object}	ErrorResponse
+// @Failure		403		{object}	ErrorResponse
+// @Failure		404		{object}	ErrorResponse
+// @Failure		409		{object}	ErrorResponse
+// @Router			/api/v1/links/{code}/status [patch]
+func (h *LinkHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
+	claims, ok := r.Context().Value(UserClaimsKey).(*service.TokenClaims)
+	if !ok || claims == nil {
+		writeJSONError(w, http.StatusUnauthorized, "não autorizado")
+		return
+	}
+
+	code := chi.URLParam(r, "code")
+	if code == "" {
+		writeJSONError(w, http.StatusBadRequest, "código do link não informado")
+		return
+	}
+
+	var req domain.UpdateLinkStatusRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "payload inválido")
+		return
+	}
+
+	if err := h.linkService.SetLinkStatus(r.Context(), code, claims.UserID, req.IsActive); err != nil {
+		handleLinkMutationError(w, err)
+		return
+	}
+
+	msg := "link pausado com sucesso"
+	if req.IsActive {
+		msg = "link reativado com sucesso"
+	}
+
+	writeJSON(w, http.StatusOK, UpdateLinkStatusResponse{
+		Message:   msg,
+		ShortCode: code,
+		IsActive:  req.IsActive,
+	})
+}
+
 // Delete godoc
-// @Summary		Desativar link
-// @Description	Desativa um link pertencente ao usuário autenticado e invalida seu cache
+// @Summary		Excluir link permanentemente
+// @Description	Desativa definitivamente um link, remove-o da lista do usuário e invalida seu cache
 // @Tags			Links
 // @Produce		json
 // @Security		BearerAuth
@@ -165,7 +223,7 @@ func (h *LinkHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, DeleteLinkResponse{
-		Message:   "link desativado com sucesso",
+		Message:   "link excluído permanentemente",
 		ShortCode: code,
 	})
 }

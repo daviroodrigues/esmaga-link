@@ -195,6 +195,53 @@ func (s *LinkService) EditLink(ctx context.Context, shortCode string, userID uui
 	return nil
 }
 
+func (s *LinkService) SetLinkStatus(ctx context.Context, shortCode string, userID uuid.UUID, isActive bool) error {
+	if s.authService != nil {
+		verified, err := s.authService.IsEmailVerified(ctx, userID)
+		if err != nil {
+			return err
+		}
+		if !verified {
+			return ErrEmailNotVerified
+		}
+	}
+
+	link, err := s.linkRepo.GetByCode(ctx, shortCode)
+	if err != nil {
+		return err
+	}
+	if link == nil || (link.UserID == nil && !link.IsActive) {
+		return ErrLinkNotFound
+	}
+	if link.UserID == nil {
+		return ErrLinkImmutable
+	}
+	if *link.UserID != userID {
+		return ErrUnauthorizedLink
+	}
+
+	if link.IsActive == isActive {
+		return nil
+	}
+
+	if err := s.linkRepo.SetLinkStatus(ctx, shortCode, userID, link.CreatedAt, isActive); err != nil {
+		return err
+	}
+
+	if isActive {
+		if s.l1Cache != nil {
+			s.l1Cache.Set(shortCode, link.OriginalURL, l1CacheTTL)
+		}
+		if s.cacheRepo != nil {
+			_ = s.cacheRepo.SetLink(ctx, shortCode, link.OriginalURL, redisCacheTTL)
+		}
+	} else {
+		s.invalidateCache(ctx, shortCode)
+	}
+
+	return nil
+}
+
 func (s *LinkService) DeleteLink(ctx context.Context, shortCode string, userID uuid.UUID) error {
 	if s.authService != nil {
 		verified, err := s.authService.IsEmailVerified(ctx, userID)
@@ -210,7 +257,7 @@ func (s *LinkService) DeleteLink(ctx context.Context, shortCode string, userID u
 	if err != nil {
 		return err
 	}
-	if link == nil || !link.IsActive {
+	if link == nil || (link.UserID == nil && !link.IsActive) {
 		return ErrLinkNotFound
 	}
 	if link.UserID == nil {
@@ -220,7 +267,7 @@ func (s *LinkService) DeleteLink(ctx context.Context, shortCode string, userID u
 		return ErrUnauthorizedLink
 	}
 
-	if err := s.linkRepo.DeactivateLink(ctx, shortCode, userID, link.CreatedAt); err != nil {
+	if err := s.linkRepo.PermanentDeleteLink(ctx, shortCode, userID, link.CreatedAt); err != nil {
 		return err
 	}
 

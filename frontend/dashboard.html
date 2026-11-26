@@ -290,23 +290,24 @@
     </div>
   </div>
 
-  <div id="deactivate-modal" class="modal-backdrop" hidden>
-    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="deactivate-modal-title" aria-describedby="deactivate-modal-desc">
+  <div id="delete-link-modal" class="modal-backdrop" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="delete-link-modal-title" aria-describedby="delete-link-modal-desc">
       <div class="modal-header">
-        <h2 id="deactivate-modal-title" class="card-title">Desativar link</h2>
-        <button class="icon-btn" type="button" data-close-modal="deactivate-modal" aria-label="Fechar janela">
+        <h2 id="delete-link-modal-title" class="card-title">Excluir link permanentemente</h2>
+        <button class="icon-btn" type="button" data-close-modal="delete-link-modal" aria-label="Fechar janela">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
           </svg>
         </button>
       </div>
-      <p id="deactivate-modal-desc" class="muted">
-        O link <strong id="deactivate-code-label" class="mono"></strong> deixará de redirecionar imediatamente. Essa ação não pode ser desfeita.
+      <p id="delete-link-modal-desc" class="muted">
+        O link <strong id="delete-link-code-label" class="mono"></strong> deixará de redirecionar, será removido do seu painel e não poderá ser reativado. Essa ação não pode ser desfeita.
       </p>
-      <div id="deactivate-error" class="alert alert-error" role="alert" hidden></div>
+      <p class="field-hint">Se quiser apenas interromper o acesso temporariamente, use a opção <strong>Pausar</strong>.</p>
+      <div id="delete-link-error" class="alert alert-error mt-md" role="alert" hidden></div>
       <div class="modal-actions">
-        <button id="deactivate-cancel-btn" class="btn btn-secondary" type="button">Cancelar</button>
-        <button id="deactivate-confirm-btn" class="btn btn-danger" type="button">Desativar link</button>
+        <button id="delete-link-cancel-btn" class="btn btn-secondary" type="button">Cancelar</button>
+        <button id="delete-link-confirm-btn" class="btn btn-danger" type="button" disabled>Excluir permanentemente</button>
       </div>
     </div>
   </div>

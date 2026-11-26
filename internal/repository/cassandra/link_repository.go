@@ -184,20 +184,43 @@ func (r *LinkRepository) UpdateURL(ctx context.Context, shortCode string, userID
 	return nil
 }
 
-func (r *LinkRepository) DeactivateLink(ctx context.Context, shortCode string, userID uuid.UUID, createdAt time.Time) error {
+func (r *LinkRepository) SetLinkStatus(ctx context.Context, shortCode string, userID uuid.UUID, createdAt time.Time, isActive bool) error {
 	u, err := gocql.ParseUUID(userID.String())
 	if err != nil {
 		return err
 	}
 
-	queryCode := `UPDATE links_by_code SET is_active = false WHERE short_code = ?`
-	if err := r.session.Query(queryCode, shortCode).WithContext(ctx).Exec(); err != nil {
-		return fmt.Errorf("erro ao desativar link em links_by_code: %w", err)
+	queryCode := `UPDATE links_by_code SET is_active = ? WHERE short_code = ?`
+	if err := r.session.Query(queryCode, isActive, shortCode).WithContext(ctx).Exec(); err != nil {
+		return fmt.Errorf("erro ao atualizar status do link em links_by_code: %w", err)
 	}
 
-	queryUser := `UPDATE links_by_user SET is_active = false WHERE user_id = ? AND created_at = ? AND short_code = ?`
+	queryUser := `UPDATE links_by_user SET is_active = ? WHERE user_id = ? AND created_at = ? AND short_code = ?`
+	if err := r.session.Query(queryUser, isActive, u, createdAt, shortCode).WithContext(ctx).Exec(); err != nil {
+		return fmt.Errorf("erro ao atualizar status do link em links_by_user: %w", err)
+	}
+
+	return nil
+}
+
+func (r *LinkRepository) DeactivateLink(ctx context.Context, shortCode string, userID uuid.UUID, createdAt time.Time) error {
+	return r.SetLinkStatus(ctx, shortCode, userID, createdAt, false)
+}
+
+func (r *LinkRepository) PermanentDeleteLink(ctx context.Context, shortCode string, userID uuid.UUID, createdAt time.Time) error {
+	u, err := gocql.ParseUUID(userID.String())
+	if err != nil {
+		return err
+	}
+
+	queryCode := `UPDATE links_by_code SET is_active = false, user_id = null WHERE short_code = ?`
+	if err := r.session.Query(queryCode, shortCode).WithContext(ctx).Exec(); err != nil {
+		return fmt.Errorf("erro ao excluir link em links_by_code: %w", err)
+	}
+
+	queryUser := `DELETE FROM links_by_user WHERE user_id = ? AND created_at = ? AND short_code = ?`
 	if err := r.session.Query(queryUser, u, createdAt, shortCode).WithContext(ctx).Exec(); err != nil {
-		return fmt.Errorf("erro ao desativar link em links_by_user: %w", err)
+		return fmt.Errorf("erro ao remover link em links_by_user: %w", err)
 	}
 
 	return nil

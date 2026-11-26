@@ -1,6 +1,7 @@
 package http
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -30,12 +31,23 @@ func NewRedirectHandler(linkService *service.LinkService) *RedirectHandler {
 func (h *RedirectHandler) HandleRedirect(w http.ResponseWriter, r *http.Request) {
 	code := chi.URLParam(r, "code")
 	if code == "" {
+		w.Header().Set("Cache-Control", "no-store")
 		http.NotFound(w, r)
 		return
 	}
 
 	originalURL, err := h.linkService.GetLinkByCode(r.Context(), code)
-	if err != nil || originalURL == "" {
+	if err != nil {
+		w.Header().Set("Cache-Control", "no-store")
+		if errors.Is(err, service.ErrLinkNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if originalURL == "" {
+		w.Header().Set("Cache-Control", "no-store")
 		http.NotFound(w, r)
 		return
 	}
@@ -58,6 +70,9 @@ func (h *RedirectHandler) HandleRedirect(w http.ResponseWriter, r *http.Request)
 }
 
 func getRealIP(r *http.Request) string {
+	if cfIP := strings.TrimSpace(r.Header.Get("CF-Connecting-IP")); cfIP != "" {
+		return cfIP
+	}
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 		parts := strings.Split(xff, ",")
 		return strings.TrimSpace(parts[0])

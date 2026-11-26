@@ -167,6 +167,11 @@ form.addEventListener('submit', async (event) => {
     return;
   }
 
+  if (turnstileCtrl.enabled && !turnstileCtrl.getToken()) {
+    setError('Aguarde a verificação anti-bot concluir e tente novamente.');
+    return;
+  }
+
   shortenBtn.disabled = true;
   shortenBtn.textContent = 'Encurtando...';
   form.setAttribute('aria-busy', 'true');

@@ -23,6 +23,10 @@ type EditLinkRequest struct {
 	OriginalURL string `json:"original_url"`
 }
 
+type UpdateLinkStatusRequest struct {
+	IsActive bool `json:"is_active"`
+}
+
 type DeleteAccountRequest struct {
 	KeepLinksActive bool `json:"keep_links_active"`
 }

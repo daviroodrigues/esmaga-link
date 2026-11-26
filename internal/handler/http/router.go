@@ -152,6 +152,7 @@ func NewRouter(
 					r.Get("/", linkHandler.ListMyLinks)
 					r.Get("/{code}/stats", linkHandler.GetStats)
 					r.Put("/{code}", linkHandler.Edit)
+					r.Patch("/{code}/status", linkHandler.UpdateStatus)
 					r.Delete("/{code}", linkHandler.Delete)
 				})
 			})

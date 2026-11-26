@@ -51,11 +51,13 @@ func healthzHandler(instanceID string) http.HandlerFunc {
 
 type PublicConfigResponse struct {
 	TurnstileSiteKey string `json:"turnstile_site_key" example:""`
+	PortfolioMode    bool   `json:"portfolio_mode" example:"false"`
 }
 
 func NewRouter(
 	instanceID string,
 	turnstileSiteKey string,
+	portfolioMode bool,
 	metrics *observability.Metrics,
 	authService *service.AuthService,
 	authHandler *AuthHandler,
@@ -104,6 +106,7 @@ func NewRouter(
 			r.Get("/config", func(w http.ResponseWriter, r *http.Request) {
 				writeJSON(w, http.StatusOK, PublicConfigResponse{
 					TurnstileSiteKey: turnstileSiteKey,
+					PortfolioMode:    portfolioMode,
 				})
 			})
 

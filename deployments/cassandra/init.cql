@@ -4,7 +4,7 @@ WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1};
 CREATE TABLE IF NOT EXISTS esmaga_link.links_by_code (
     short_code text,
     original_url text,
-    user_id uuid,          -- NULL para links anônimos
+    user_id uuid,
     is_active boolean,
     created_at timestamp,
     PRIMARY KEY (short_code)
@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS esmaga_link.links_by_user (
 
 CREATE TABLE IF NOT EXISTS esmaga_link.click_events (
     short_code text,
-    bucket_date date,       -- ex: 2026-11-08 (evita que a partição cresça descontroladamente)
+    bucket_date date,
     clicked_at timestamp,
     event_id timeuuid,
     ip_address text,

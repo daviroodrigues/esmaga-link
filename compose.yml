@@ -98,6 +98,7 @@ services:
       APP_BASE_URL: ${APP_BASE_URL}
       TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY}
       TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY}
+      PORTFOLIO_MODE: ${PORTFOLIO_MODE:-false}
     depends_on:
       postgres:
         condition: service_healthy

@@ -127,7 +127,7 @@ func main() {
 	redirectHandler := httpHandler.NewRedirectHandler(linkService)
 	rateLimiter := httpHandler.NewRateLimiter(rdb)
 
-	router := httpHandler.NewRouter(cfg.InstanceID, cfg.TurnstileSiteKey, metrics, authService, authHandler, linkHandler, redirectHandler, rateLimiter)
+	router := httpHandler.NewRouter(cfg.InstanceID, cfg.TurnstileSiteKey, cfg.PortfolioMode, metrics, authService, authHandler, linkHandler, redirectHandler, rateLimiter)
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.Port,

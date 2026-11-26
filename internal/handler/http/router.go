@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 
-	_ "github.com/daviroodrigues/esmaga-api/docs"
-	"github.com/daviroodrigues/esmaga-api/internal/observability"
-	"github.com/daviroodrigues/esmaga-api/internal/service"
+	_ "esmaga-link/docs"
+	"esmaga-link/internal/observability"
+	"esmaga-link/internal/service"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"

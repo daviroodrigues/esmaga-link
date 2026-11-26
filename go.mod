@@ -1,4 +1,4 @@
-module github.com/daviroodrigues/esmaga-api
+module esmaga-link
 
 go 1.26.0
 

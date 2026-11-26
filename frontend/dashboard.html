@@ -145,7 +145,7 @@
       <section class="card" aria-labelledby="my-links-heading">
         <div class="card-header-row">
           <h2 id="my-links-heading" class="card-title">Meus links</h2>
-          <button id="refresh-links-btn" class="btn btn-secondary btn-sm" type="button">Atualizar</button>
+          <button id="refresh-links-btn" class="btn btn-secondary btn-sm" type="button" data-tooltip="Recarregar lista de links" data-tooltip-align="end">Atualizar</button>
         </div>
 
         <div id="links-empty" class="empty-state">
@@ -303,7 +303,7 @@
       <p id="delete-link-modal-desc" class="muted">
         O link <strong id="delete-link-code-label" class="mono"></strong> deixará de redirecionar, será removido do seu painel e não poderá ser reativado. Essa ação não pode ser desfeita.
       </p>
-      <p class="field-hint">Se quiser apenas interromper o acesso temporariamente, use a opção <strong>Pausar</strong>.</p>
+      <p class="field-hint">Se quiser apenas interromper o acesso temporariamente, desative o link usando a chave na coluna <strong>Status</strong>.</p>
       <div id="delete-link-error" class="alert alert-error mt-md" role="alert" hidden></div>
       <div class="modal-actions">
         <button id="delete-link-cancel-btn" class="btn btn-secondary" type="button">Cancelar</button>

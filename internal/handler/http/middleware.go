@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/daviroodrigues/esmaga-api/internal/service"
+	"esmaga-link/internal/service"
 )
 
 type contextKey string

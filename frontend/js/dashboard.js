@@ -458,18 +458,55 @@ function openDeleteLinkModal(code) {
   }, 1000);
 }
 
-async function handleToggleLinkStatus(link, buttonEl) {
+function createTrashIcon() {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '2');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.setAttribute('aria-hidden', 'true');
+
+  const parts = [
+    ['polyline', { points: '3 6 5 6 21 6' }],
+    ['path', { d: 'M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6' }],
+    ['path', { d: 'M10 11v6' }],
+    ['path', { d: 'M14 11v6' }],
+    ['path', { d: 'M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2' }],
+  ];
+
+  for (const [tag, attrs] of parts) {
+    const node = document.createElementNS(ns, tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      node.setAttribute(k, v);
+    }
+    svg.appendChild(node);
+  }
+  return svg;
+}
+
+async function handleToggleLinkStatus(link, switchEl, labelEl) {
   const nextActive = !link.is_active;
-  buttonEl.disabled = true;
-  buttonEl.textContent = nextActive ? 'Reativando...' : 'Pausando...';
+  switchEl.disabled = true;
+  switchEl.setAttribute('aria-busy', 'true');
+  switchEl.setAttribute('aria-checked', String(nextActive));
+  if (labelEl) {
+    labelEl.textContent = nextActive ? 'Ativando...' : 'Pausando...';
+  }
   try {
     await setLinkStatus(link.short_code, nextActive);
-    showToast(toastEl, nextActive ? `Link ${link.short_code} reativado.` : `Link ${link.short_code} pausado.`);
+    showToast(toastEl, nextActive ? `Link ${link.short_code} ativado.` : `Link ${link.short_code} pausado.`);
     await loadLinks();
   } catch (err) {
     showToast(toastEl, err.message || 'Erro ao alterar status do link.');
-    buttonEl.disabled = false;
-    buttonEl.textContent = link.is_active ? 'Pausar' : 'Reativar';
+    switchEl.disabled = false;
+    switchEl.removeAttribute('aria-busy');
+    switchEl.setAttribute('aria-checked', String(link.is_active));
+    if (labelEl) {
+      labelEl.textContent = link.is_active ? 'Ativo' : 'Pausado';
+    }
   }
 }
 
@@ -499,16 +536,39 @@ function renderLinksTable(links) {
     const shortUrl = buildShortUrl(link.short_code);
     const isSelected = selectedStatsCode === link.short_code;
 
-    const statusPill = el('span', {
-      className: `status-pill ${link.is_active ? 'status-active' : 'status-inactive'}`,
+    const statusLabel = el('span', {
+      className: `status-label ${link.is_active ? 'status-label-active' : 'status-label-inactive'}`,
       text: link.is_active ? 'Ativo' : 'Pausado',
     });
+
+    const statusSwitch = el(
+      'button',
+      {
+        type: 'button',
+        className: 'link-switch',
+        attrs: {
+          role: 'switch',
+          'aria-checked': String(Boolean(link.is_active)),
+          'aria-label': link.is_active
+            ? `Desativar link ${link.short_code}`
+            : `Ativar link ${link.short_code}`,
+          'data-tooltip': link.is_active ? 'Desativar link' : 'Ativar link',
+        },
+        onClick: (event) => handleToggleLinkStatus(link, event.currentTarget, statusLabel),
+      },
+      el('span', { className: 'link-switch-thumb', attrs: { 'aria-hidden': 'true' } })
+    );
+
+    const statusControl = el('div', { className: 'status-control' }, statusSwitch, statusLabel);
 
     const copyBtn = el('button', {
       type: 'button',
       className: 'btn btn-secondary btn-sm',
       text: 'Copiar',
-      attrs: { 'aria-label': `Copiar link curto ${link.short_code}` },
+      attrs: {
+        'aria-label': `Copiar link curto ${link.short_code}`,
+        'data-tooltip': 'Copiar link curto',
+      },
     });
     copyBtn.addEventListener('click', () => copyUrl(shortUrl, copyBtn));
 
@@ -519,9 +579,25 @@ function renderLinksTable(links) {
       attrs: {
         'aria-label': `Ver estatísticas do link ${link.short_code}`,
         'aria-pressed': String(isSelected),
+        'data-tooltip': 'Ver estatísticas de cliques',
       },
       onClick: () => loadStats(link.short_code),
     });
+
+    const deleteBtn = el(
+      'button',
+      {
+        type: 'button',
+        className: 'icon-btn icon-btn-sm icon-btn-danger',
+        attrs: {
+          'aria-label': `Excluir permanentemente o link ${link.short_code}`,
+          'data-tooltip': 'Excluir link permanentemente',
+          'data-tooltip-align': 'end',
+        },
+        onClick: () => openDeleteLinkModal(link.short_code),
+      },
+      createTrashIcon()
+    );
 
     const tr = el(
       'tr',
@@ -532,7 +608,7 @@ function renderLinksTable(links) {
         { className: 'url-cell', title: link.original_url, attrs: { 'data-label': 'URL de destino' } },
         createSafeAnchor(link.original_url, link.original_url)
       ),
-      el('td', { attrs: { 'data-label': 'Status' } }, statusPill),
+      el('td', { attrs: { 'data-label': 'Status' } }, statusControl),
       el('td', { className: 'date-cell', text: formatDate(link.created_at), attrs: { 'data-label': 'Criado em' } }),
       el(
         'td',
@@ -542,35 +618,24 @@ function renderLinksTable(links) {
           type: 'button',
           className: 'btn btn-secondary btn-sm',
           text: 'QR Code',
-          attrs: { 'aria-label': `Abrir QR Code do link ${link.short_code}` },
+          attrs: {
+            'aria-label': `Abrir QR Code do link ${link.short_code}`,
+            'data-tooltip': 'Abrir QR Code',
+          },
           onClick: () => openQrModal(link.short_code),
         }),
         el('button', {
           type: 'button',
           className: 'btn btn-secondary btn-sm',
           text: 'Editar',
-          attrs: { 'aria-label': `Editar destino do link ${link.short_code}` },
+          attrs: {
+            'aria-label': `Editar destino do link ${link.short_code}`,
+            'data-tooltip': 'Editar URL de destino',
+          },
           onClick: () => openEditModal(link),
         }),
         statsBtn,
-        el('button', {
-          type: 'button',
-          className: 'btn btn-secondary btn-sm',
-          text: link.is_active ? 'Pausar' : 'Reativar',
-          attrs: {
-            'aria-label': link.is_active
-              ? `Pausar link ${link.short_code}`
-              : `Reativar link ${link.short_code}`,
-          },
-          onClick: (event) => handleToggleLinkStatus(link, event.currentTarget),
-        }),
-        el('button', {
-          type: 'button',
-          className: 'btn btn-danger-outline btn-sm',
-          text: 'Excluir',
-          attrs: { 'aria-label': `Excluir permanentemente o link ${link.short_code}` },
-          onClick: () => openDeleteLinkModal(link.short_code),
-        })
+        deleteBtn
       )
     );
     linksTbody.appendChild(tr);

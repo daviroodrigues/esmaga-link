@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/daviroodrigues/esmaga-api/internal/service"
+	"esmaga-link/internal/service"
 	"github.com/redis/go-redis/v9"
 )
 

@@ -7,7 +7,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/daviroodrigues/esmaga-api/internal/domain"
+	"esmaga-link/internal/domain"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 

@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/daviroodrigues/esmaga-api/internal/config"
+	"esmaga-link/internal/config"
 )
 
 type Sender interface {

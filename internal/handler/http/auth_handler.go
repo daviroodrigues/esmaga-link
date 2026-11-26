@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/daviroodrigues/esmaga-api/internal/domain"
-	"github.com/daviroodrigues/esmaga-api/internal/security"
-	"github.com/daviroodrigues/esmaga-api/internal/service"
+	"esmaga-link/internal/domain"
+	"esmaga-link/internal/security"
+	"esmaga-link/internal/service"
 )
 
 const refreshTokenCookieName = "refresh_token"

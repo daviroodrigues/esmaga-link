@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/daviroodrigues/esmaga-api/internal/domain"
+	"esmaga-link/internal/domain"
 )
 
 type stubStore struct {
@@ -61,6 +61,14 @@ func TestRenderer_AllTemplates(t *testing.T) {
 		}
 		if !strings.Contains(textBody, tc.wantText) {
 			t.Errorf("template %s: texto não contém %q", tc.name, tc.wantText)
+		}
+		for _, token := range []string{"#faf9f6", "#0f5c47", "#181715", "#e2dfd7", "prefers-color-scheme: dark", "Esmaga Link"} {
+			if !strings.Contains(htmlBody, token) {
+				t.Errorf("template %s: HTML não contém token de identidade visual %q", tc.name, token)
+			}
+		}
+		if strings.Contains(htmlBody, "#4f46e5") {
+			t.Errorf("template %s: HTML ainda contém cor indigo antiga #4f46e5", tc.name)
 		}
 	}
 }

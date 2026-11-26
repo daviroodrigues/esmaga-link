@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/daviroodrigues/esmaga-api/internal/domain"
-	"github.com/daviroodrigues/esmaga-api/internal/queue/rabbitmq"
-	"github.com/daviroodrigues/esmaga-api/internal/repository/postgres"
+	"esmaga-link/internal/domain"
+	"esmaga-link/internal/queue/rabbitmq"
+	"esmaga-link/internal/repository/postgres"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"

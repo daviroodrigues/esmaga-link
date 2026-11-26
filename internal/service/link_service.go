@@ -7,12 +7,12 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/daviroodrigues/esmaga-api/internal/domain"
-	"github.com/daviroodrigues/esmaga-api/internal/idgen"
-	"github.com/daviroodrigues/esmaga-api/internal/queue/rabbitmq"
-	"github.com/daviroodrigues/esmaga-api/internal/repository/cassandra"
-	"github.com/daviroodrigues/esmaga-api/internal/repository/redis"
-	"github.com/daviroodrigues/esmaga-api/internal/security"
+	"esmaga-link/internal/domain"
+	"esmaga-link/internal/idgen"
+	"esmaga-link/internal/queue/rabbitmq"
+	"esmaga-link/internal/repository/cassandra"
+	"esmaga-link/internal/repository/redis"
+	"esmaga-link/internal/security"
 	"github.com/google/uuid"
 )
 

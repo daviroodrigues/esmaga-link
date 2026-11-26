@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/daviroodrigues/esmaga-api/internal/domain"
+	"esmaga-link/internal/domain"
 	"github.com/gocql/gocql"
 	"github.com/google/uuid"
 )

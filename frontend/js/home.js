@@ -42,7 +42,7 @@ let turnstileCtrl = { enabled: false, getToken: () => '', reset: () => {} };
 
 initThemeToggle(themeBtn);
 getPublicConfig().then((cfg) => applyPortfolioVisibility(cfg));
-mountTurnstile(turnstileContainer).then((ctrl) => {
+mountTurnstile(turnstileContainer, { action: 'create_link' }).then((ctrl) => {
   turnstileCtrl = ctrl;
 });
 

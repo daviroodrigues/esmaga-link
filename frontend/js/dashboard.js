@@ -56,7 +56,8 @@ const authPasswordField = document.getElementById('auth-password-field');
 const authPassword = document.getElementById('auth-password');
 const authPasswordConfirmField = document.getElementById('auth-password-confirm-field');
 const authPasswordConfirm = document.getElementById('auth-password-confirm');
-const authTurnstileEl = document.getElementById('auth-turnstile');
+const registerTurnstileEl = document.getElementById('register-turnstile');
+const forgotTurnstileEl = document.getElementById('forgot-turnstile');
 const authSubmitBtn = document.getElementById('auth-submit-btn');
 const forgotToggleBtn = document.getElementById('forgot-toggle-btn');
 const forgotBackWrap = document.getElementById('forgot-back-wrap');
@@ -141,7 +142,8 @@ const modalCtrl = createModalController([
 
 let authMode = 'login';
 let pendingEmail = '';
-let authTurnstileCtrl = { enabled: false, getToken: () => '', reset: () => {} };
+let registerTurnstileCtrl = { enabled: false, getToken: () => '', reset: () => {} };
+let forgotTurnstileCtrl = { enabled: false, getToken: () => '', reset: () => {} };
 let cachedLinks = [];
 let selectedStatsCode = null;
 let lastStatsPayload = null;
@@ -155,8 +157,12 @@ let devicesChart = null;
 initThemeToggle(themeBtn);
 initPasswordToggles();
 getPublicConfig().then((cfg) => applyPortfolioVisibility(cfg));
-mountTurnstile(authTurnstileEl).then((ctrl) => {
-  authTurnstileCtrl = ctrl;
+Promise.all([
+  mountTurnstile(registerTurnstileEl, { action: 'register' }),
+  mountTurnstile(forgotTurnstileEl, { action: 'forgot_password' }),
+]).then(([regCtrl, forgotCtrl]) => {
+  registerTurnstileCtrl = regCtrl;
+  forgotTurnstileCtrl = forgotCtrl;
   updateAuthUI();
 });
 
@@ -218,7 +224,8 @@ function updateAuthUI() {
   authPasswordConfirm.required = isRegister;
   forgotToggleBtn.hidden = !isLogin;
   forgotBackWrap.hidden = !isForgot;
-  authTurnstileEl.hidden = !((isRegister || isForgot) && authTurnstileCtrl.enabled);
+  registerTurnstileEl.hidden = !(isRegister && registerTurnstileCtrl.enabled);
+  forgotTurnstileEl.hidden = !(isForgot && forgotTurnstileCtrl.enabled);
 
   if (isLogin) {
     authHeading.textContent = 'Acesse sua conta';
@@ -335,16 +342,16 @@ authForm.addEventListener('submit', async (event) => {
         authPasswordConfirm.focus();
         return;
       }
-      await register(email, password, authName.value, authTurnstileCtrl.getToken());
+      await register(email, password, authName.value, registerTurnstileCtrl.getToken());
       authPassword.value = '';
       authPasswordConfirm.value = '';
-      authTurnstileCtrl.reset();
+      registerTurnstileCtrl.reset();
       showPendingVerification(email);
       return;
     }
     if (authMode === 'forgot') {
-      await forgotPassword(email, authTurnstileCtrl.getToken());
-      authTurnstileCtrl.reset();
+      await forgotPassword(email, forgotTurnstileCtrl.getToken());
+      forgotTurnstileCtrl.reset();
       authInfo.textContent = 'Se o e-mail estiver cadastrado, enviamos as instruções para redefinir sua senha.';
       authInfo.hidden = false;
       return;
@@ -355,7 +362,11 @@ authForm.addEventListener('submit', async (event) => {
     syncView();
     await loadLinks();
   } catch (err) {
-    authTurnstileCtrl.reset();
+    if (authMode === 'register') {
+      registerTurnstileCtrl.reset();
+    } else if (authMode === 'forgot') {
+      forgotTurnstileCtrl.reset();
+    }
     if (err.status === 403 && String(err.message).toLowerCase().includes('verificado')) {
       showPendingVerification(email);
     } else {

@@ -27,7 +27,7 @@ function loadTurnstileScript() {
   return scriptLoadPromise;
 }
 
-export async function mountTurnstile(containerEl) {
+export async function mountTurnstile(containerEl, options = {}) {
   if (!containerEl) {
     return { enabled: false, getToken: () => '', reset: () => {} };
   }
@@ -42,7 +42,7 @@ export async function mountTurnstile(containerEl) {
   containerEl.hidden = false;
   let currentToken = '';
 
-  const widgetId = window.turnstile.render(containerEl, {
+  const renderOptions = {
     sitekey: siteKey,
     callback: (token) => {
       currentToken = token;
@@ -53,7 +53,12 @@ export async function mountTurnstile(containerEl) {
     'error-callback': () => {
       currentToken = '';
     },
-  });
+  };
+  if (options && options.action) {
+    renderOptions.action = options.action;
+  }
+
+  const widgetId = window.turnstile.render(containerEl, renderOptions);
 
   return {
     enabled: true,

@@ -30,7 +30,12 @@ CREATE TABLE IF NOT EXISTS esmaga_link.click_events (
     country text,
     device_type text,
     PRIMARY KEY ((short_code, bucket_date), clicked_at, event_id)
-) WITH CLUSTERING ORDER BY (clicked_at DESC);
+) WITH CLUSTERING ORDER BY (clicked_at DESC)
+  AND compaction = {
+    'class': 'TimeWindowCompactionStrategy',
+    'compaction_window_unit': 'DAYS',
+    'compaction_window_size': 1
+  };
 
 CREATE TABLE IF NOT EXISTS esmaga_link.id_checkpoints (
     sequence_name text,

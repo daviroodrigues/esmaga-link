@@ -120,7 +120,7 @@ func main() {
 	linkService := service.NewLinkService(idGenerator, linkRepository, cacheRepository, publisher, authService, urlValidator)
 	go linkService.StartCacheInvalidationListener(ctx)
 
-	turnstileVerifier := security.NewTurnstileVerifier(cfg.TurnstileSecretKey)
+	turnstileVerifier := security.NewTurnstileVerifier(cfg.TurnstileSecretKey, cfg.TurnstileHostnames)
 
 	authHandler := httpHandler.NewAuthHandler(authService, linkService, turnstileVerifier)
 	linkHandler := httpHandler.NewLinkHandler(linkService, turnstileVerifier)

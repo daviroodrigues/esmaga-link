@@ -159,6 +159,29 @@
           <span>Aplicar ofuscação lexical (alfabeto Base62 permutado via Fisher-Yates)</span>
         </label>
 
+        <div class="alphabet-panel mt-sm" aria-live="polite">
+          <div class="alphabet-seed-row">
+            <label for="lab-seed-input" class="alphabet-seed-label">
+              <code class="mono">ALPHABET_SEED</code> demonstrativa
+            </label>
+            <div class="alphabet-seed-controls">
+              <input
+                id="lab-seed-input"
+                type="text"
+                autocomplete="off"
+                spellcheck="false"
+                maxlength="64"
+                placeholder="Digite uma seed ou sorteie"
+              >
+              <button id="lab-seed-random-btn" class="btn btn-secondary btn-sm" type="button">Sortear seed</button>
+            </div>
+          </div>
+          <div class="alphabet-preview">
+            <span class="alphabet-preview-label">Alfabeto ativo (62 chars · dígito 0 / padding em destaque):</span>
+            <code id="lab-alphabet-display" class="alphabet-string mono"></code>
+          </div>
+        </div>
+
         <div id="lab-error" class="alert alert-error mt-md" role="alert" hidden></div>
 
         <div class="pipeline-grid" aria-live="polite">

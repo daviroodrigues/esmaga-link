@@ -613,29 +613,33 @@ function renderLinksTable(links) {
       el(
         'td',
         { className: 'actions-cell' },
-        copyBtn,
-        el('button', {
-          type: 'button',
-          className: 'btn btn-secondary btn-sm',
-          text: 'QR Code',
-          attrs: {
-            'aria-label': `Abrir QR Code do link ${link.short_code}`,
-            'data-tooltip': 'Abrir QR Code',
-          },
-          onClick: () => openQrModal(link.short_code),
-        }),
-        el('button', {
-          type: 'button',
-          className: 'btn btn-secondary btn-sm',
-          text: 'Editar',
-          attrs: {
-            'aria-label': `Editar destino do link ${link.short_code}`,
-            'data-tooltip': 'Editar URL de destino',
-          },
-          onClick: () => openEditModal(link),
-        }),
-        statsBtn,
-        deleteBtn
+        el(
+          'div',
+          { className: 'actions-group' },
+          copyBtn,
+          el('button', {
+            type: 'button',
+            className: 'btn btn-secondary btn-sm',
+            text: 'QR Code',
+            attrs: {
+              'aria-label': `Abrir QR Code do link ${link.short_code}`,
+              'data-tooltip': 'Abrir QR Code',
+            },
+            onClick: () => openQrModal(link.short_code),
+          }),
+          el('button', {
+            type: 'button',
+            className: 'btn btn-secondary btn-sm',
+            text: 'Editar',
+            attrs: {
+              'aria-label': `Editar destino do link ${link.short_code}`,
+              'data-tooltip': 'Editar URL de destino',
+            },
+            onClick: () => openEditModal(link),
+          }),
+          statsBtn,
+          deleteBtn
+        )
       )
     );
     linksTbody.appendChild(tr);

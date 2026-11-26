@@ -14,7 +14,77 @@ const contentWrap = document.getElementById('portfolio-content');
 initThemeToggle(themeBtn);
 
 const STANDARD_ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
-const PERMUTED_ALPHABET = 'zWv6UYRb9tIGpKVrc2EFw1lTHemsSjqC5a03DL7Z4QPBdJyNhiouAMXgfxn8Ok';
+const DEMO_SEED_STORAGE_KEY = 'esmaga:demo-alphabet-seed';
+
+function generateRandomSeed() {
+  if (window.crypto && typeof window.crypto.getRandomValues === 'function') {
+    const bytes = new Uint8Array(4);
+    window.crypto.getRandomValues(bytes);
+    const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+    return `demo-${hex}`;
+  }
+  const fallback = Math.floor(Math.random() * 0xffffffff)
+    .toString(16)
+    .padStart(8, '0');
+  return `demo-${fallback}`;
+}
+
+function loadOrCreateDemoSeed() {
+  try {
+    const stored = window.localStorage.getItem(DEMO_SEED_STORAGE_KEY);
+    if (stored && stored.trim() !== '') {
+      return stored;
+    }
+    const created = generateRandomSeed();
+    window.localStorage.setItem(DEMO_SEED_STORAGE_KEY, created);
+    return created;
+  } catch {
+    return generateRandomSeed();
+  }
+}
+
+function saveDemoSeed(seed) {
+  try {
+    if (seed) {
+      window.localStorage.setItem(DEMO_SEED_STORAGE_KEY, seed);
+    } else {
+      window.localStorage.removeItem(DEMO_SEED_STORAGE_KEY);
+    }
+  } catch {
+    // Ignore storage restrictions (e.g. private browsing / blocked storage).
+  }
+}
+
+function hashSeed32(str) {
+  let h = 2166136261;
+  const bytes = new TextEncoder().encode(str);
+  for (let i = 0; i < bytes.length; i++) {
+    h ^= bytes[i];
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function shuffleAlphabetWithSeed(source, seed) {
+  if (!seed) return source;
+  const rand = mulberry32(hashSeed32(seed));
+  const chars = source.split('');
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  return chars.join('');
+}
 
 const ERAS = [
   {
@@ -101,7 +171,7 @@ function gcdBig(a, b) {
   return x;
 }
 
-function transformSeqID(seqID) {
+function transformSeqID(seqID, permutedAlphabet) {
   let remaining = seqID > 0n ? seqID - 1n : 0n;
   for (const era of ERAS) {
     if (remaining < era.size) {
@@ -112,7 +182,7 @@ function transformSeqID(seqID) {
         localIndex: remaining,
         obfuscated,
         standardCode: encodeBase62(obfuscated, STANDARD_ALPHABET, era.codeLength),
-        permutedCode: encodeBase62(obfuscated, PERMUTED_ALPHABET, era.codeLength),
+        permutedCode: encodeBase62(obfuscated, permutedAlphabet, era.codeLength),
       };
     }
     remaining -= era.size;
@@ -414,7 +484,14 @@ function initPipelineLab() {
   const seqInput = document.getElementById('lab-seq-input');
   const randomBtn = document.getElementById('lab-random-btn');
   const shuffleToggle = document.getElementById('lab-shuffle-toggle');
+  const seedInput = document.getElementById('lab-seed-input');
+  const seedRandomBtn = document.getElementById('lab-seed-random-btn');
+  const alphabetDisplay = document.getElementById('lab-alphabet-display');
   const errorBox = document.getElementById('lab-error');
+
+  let currentSeed = loadOrCreateDemoSeed();
+  let permutedAlphabet = shuffleAlphabetWithSeed(STANDARD_ALPHABET, currentSeed);
+  seedInput.value = currentSeed;
 
   const eraVal = document.getElementById('lab-era-val');
   const eraMeta = document.getElementById('lab-era-meta');
@@ -451,8 +528,20 @@ function initPipelineLab() {
     }
   }
 
+  function renderAlphabetDisplay(activeAlphabet) {
+    clearElement(alphabetDisplay);
+    alphabetDisplay.appendChild(
+      el('span', {
+        className: 'alphabet-zero',
+        text: activeAlphabet[0],
+        attrs: { title: 'Índice 0 do alfabeto (usado no padding à esquerda)' },
+      })
+    );
+    alphabetDisplay.appendChild(document.createTextNode(activeAlphabet.slice(1)));
+  }
+
   function renderPipeline(seqID) {
-    const result = transformSeqID(seqID);
+    const result = transformSeqID(seqID, permutedAlphabet);
     if (!result) {
       setLabError(`Informe um número inteiro entre 1 e ${formatBigIntBR(MAX_SEQ_ID)}.`);
       return;
@@ -460,9 +549,13 @@ function initPipelineLab() {
     setLabError('');
 
     const usePermuted = shuffleToggle.checked;
-    const activeAlphabet = usePermuted ? PERMUTED_ALPHABET : STANDARD_ALPHABET;
+    const activeAlphabet = usePermuted ? permutedAlphabet : STANDARD_ALPHABET;
     const activeCode = usePermuted ? result.permutedCode : result.standardCode;
     const otherCode = usePermuted ? result.standardCode : result.permutedCode;
+
+    seedInput.disabled = !usePermuted;
+    seedRandomBtn.disabled = !usePermuted;
+    renderAlphabetDisplay(activeAlphabet);
 
     eraVal.textContent = `${result.era.name} (${result.era.codeLength} caracteres)`;
     eraMeta.textContent = `Índice local n = ${formatBigIntBR(result.localIndex)} no universo M = 62^${result.era.codeLength} = ${formatBigIntBR(result.era.size)}.`;
@@ -478,10 +571,14 @@ function initPipelineLab() {
     if (primesOk) proofBadges.appendChild(el('span', { className: 'proof-badge', text: '2, 31 | (A-1)' }));
     if (fourOk) proofBadges.appendChild(el('span', { className: 'proof-badge', text: '4 | (A-1)' }));
 
+    const zeroNote =
+      result.obfuscated === 0n
+        ? ` Como n = 0 gera T^0(0) = 0, o código é preenchido com o dígito 0 deste alfabeto ("${activeAlphabet[0]}").`
+        : '';
     codeVal.textContent = `/r/${activeCode}`;
     codeMeta.textContent = usePermuted
-      ? `Alfabeto embaralhado (Fisher-Yates). No Base62 ordenado seria "${otherCode}".`
-      : `Alfabeto Base62 padrão (0-9a-zA-Z). Com embaralhamento Fisher-Yates fica "${otherCode}".`;
+      ? `Alfabeto gerado a partir da seed demonstrativa "${currentSeed || '(vazia — padrão)'}" (não usa a seed de produção). No Base62 ordenado seria "${otherCode}".${zeroNote}`
+      : `Alfabeto Base62 padrão (0-9a-zA-Z). Com a seed demonstrativa atual fica "${otherCode}".${zeroNote}`;
 
     const decoded = decodeBase62(activeCode, activeAlphabet);
     const exactMatch = decoded === result.obfuscated;
@@ -493,7 +590,7 @@ function initPipelineLab() {
     clearElement(neighborsTbody);
     const candidates = [seqID - 1n, seqID, seqID + 1n].filter((id) => id >= 1n && id <= MAX_SEQ_ID);
     for (const id of candidates) {
-      const r = transformSeqID(id);
+      const r = transformSeqID(id, permutedAlphabet);
       const isCurrent = id === seqID;
       const tr = el(
         'tr',
@@ -505,6 +602,18 @@ function initPipelineLab() {
         el('td', { className: 'mono', text: r.permutedCode })
       );
       neighborsTbody.appendChild(tr);
+    }
+  }
+
+  function applySeed(nextSeed) {
+    currentSeed = nextSeed;
+    saveDemoSeed(currentSeed);
+    permutedAlphabet = shuffleAlphabetWithSeed(STANDARD_ALPHABET, currentSeed);
+    const parsed = parseSeqInput(seqInput.value);
+    if (parsed !== null) {
+      renderPipeline(parsed);
+    } else {
+      renderAlphabetDisplay(shuffleToggle.checked ? permutedAlphabet : STANDARD_ALPHABET);
     }
   }
 
@@ -521,7 +630,24 @@ function initPipelineLab() {
 
   shuffleToggle.addEventListener('change', () => {
     const parsed = parseSeqInput(seqInput.value);
-    if (parsed !== null) renderPipeline(parsed);
+    if (parsed !== null) {
+      renderPipeline(parsed);
+    } else {
+      const usePermuted = shuffleToggle.checked;
+      seedInput.disabled = !usePermuted;
+      seedRandomBtn.disabled = !usePermuted;
+      renderAlphabetDisplay(usePermuted ? permutedAlphabet : STANDARD_ALPHABET);
+    }
+  });
+
+  seedInput.addEventListener('input', () => {
+    applySeed(seedInput.value);
+  });
+
+  seedRandomBtn.addEventListener('click', () => {
+    const nextSeed = generateRandomSeed();
+    seedInput.value = nextSeed;
+    applySeed(nextSeed);
   });
 
   randomBtn.addEventListener('click', () => {

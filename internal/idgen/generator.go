@@ -231,13 +231,15 @@ func (g *IDGenerator) InitOrRecover(ctx context.Context) error {
 	}
 
 	if exists == 0 {
-
 		safeStart := checkpoint + int64(g.batchSize*2)
-		if err := g.redis.Set(ctx, g.redisKey, safeStart, 0).Err(); err != nil {
+		set, err := g.redis.SetNX(ctx, g.redisKey, safeStart, 0).Result()
+		if err != nil {
 			return fmt.Errorf("falha ao inicializar chave no redis: %w", err)
 		}
-		if err := g.storage.SaveCheckpoint(ctx, g.redisKey, safeStart); err != nil {
-			return fmt.Errorf("falha ao persistir checkpoint de recuperação no cassandra: %w", err)
+		if set {
+			if err := g.storage.SaveCheckpoint(ctx, g.redisKey, safeStart); err != nil {
+				return fmt.Errorf("falha ao persistir checkpoint de recuperação no cassandra: %w", err)
+			}
 		}
 	} else {
 

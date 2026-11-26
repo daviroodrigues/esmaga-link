@@ -37,10 +37,9 @@ func (r *LinkRepository) Create(ctx context.Context, l *domain.Link) error {
 		VALUES (?, ?, ?, ?, ?)
 		IF NOT EXISTS
 	`
-	var existingCode string
 	applied, err := r.session.Query(queryCode, l.ShortCode, l.OriginalURL, userUUID, l.IsActive, l.CreatedAt).
 		WithContext(ctx).
-		ScanCAS(&existingCode)
+		MapScanCAS(make(map[string]interface{}))
 
 	if err != nil {
 		return fmt.Errorf("erro ao inserir links_by_code no cassandra: %w", err)

@@ -26,6 +26,7 @@ type Config struct {
 	SMTPTLS            string
 	TurnstileSiteKey   string
 	TurnstileSecretKey string
+	TurnstileHostnames string
 	PortfolioMode      bool
 }
 
@@ -51,6 +52,7 @@ func Load() *Config {
 		SMTPTLS:            getEnv("SMTP_TLS", "starttls"),
 		TurnstileSiteKey:   getEnv("TURNSTILE_SITE_KEY", ""),
 		TurnstileSecretKey: getEnv("TURNSTILE_SECRET_KEY", ""),
+		TurnstileHostnames: getEnv("TURNSTILE_HOSTNAMES", ""),
 		PortfolioMode:      getEnvAsBool("PORTFOLIO_MODE", false),
 	}
 }

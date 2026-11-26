@@ -70,8 +70,8 @@ func (h *LinkHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if userID == nil && h.turnstile != nil {
-		if err := h.turnstile.Verify(r.Context(), req.TurnstileToken, r.RemoteAddr); err != nil {
-			writeJSONError(w, http.StatusBadRequest, err.Error())
+		if err := h.turnstile.Verify(r.Context(), req.TurnstileToken, r.RemoteAddr, "create_link"); err != nil {
+			writeJSONError(w, http.StatusForbidden, err.Error())
 			return
 		}
 	}

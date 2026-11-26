@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"strconv"
 	"time"
 
 	"github.com/daviroodrigues/esmaga-api/internal/domain"
@@ -16,9 +15,8 @@ const (
 	ExchangeNotifications = "notifications.topic"
 	ExchangeDLX           = "notifications.dlx"
 
-	QueueEmail      = "notifications.email"
-	QueueEmailRetry = "notifications.email.retry"
-	QueueEmailDLQ   = "notifications.email.dlq"
+	QueueEmail    = "notifications.email"
+	QueueEmailDLQ = "notifications.email.dlq"
 
 	RoutingKeyEmailVerification = "email.verification"
 	RoutingKeyPasswordReset     = "email.password_reset"
@@ -27,10 +25,16 @@ const (
 	RoutingKeyEmailDLQ          = "email.dlq"
 )
 
-var emailRetryDelays = []time.Duration{
-	10 * time.Second,
-	1 * time.Minute,
-	5 * time.Minute,
+type emailRetryTier struct {
+	queueName  string
+	routingKey string
+	delay      time.Duration
+}
+
+var emailRetryTiers = []emailRetryTier{
+	{queueName: "notifications.email.retry.10s", routingKey: "email.retry_10s", delay: 10 * time.Second},
+	{queueName: "notifications.email.retry.1m", routingKey: "email.retry_1m", delay: 1 * time.Minute},
+	{queueName: "notifications.email.retry.5m", routingKey: "email.retry_5m", delay: 5 * time.Minute},
 }
 
 func declareNotificationsTopology(ch *amqp.Channel) error {
@@ -51,13 +55,17 @@ func declareNotificationsTopology(ch *amqp.Channel) error {
 		return fmt.Errorf("erro ao vincular fila %s: %w", QueueEmail, err)
 	}
 
-	if _, err := ch.QueueDeclare(QueueEmailRetry, true, false, false, false, amqp.Table{
-		"x-dead-letter-exchange": ExchangeNotifications,
-	}); err != nil {
-		return fmt.Errorf("erro ao declarar fila %s: %w", QueueEmailRetry, err)
-	}
-	if err := ch.QueueBind(QueueEmailRetry, RoutingKeyEmailRetry, ExchangeDLX, false, nil); err != nil {
-		return fmt.Errorf("erro ao vincular fila %s: %w", QueueEmailRetry, err)
+	for _, tier := range emailRetryTiers {
+		if _, err := ch.QueueDeclare(tier.queueName, true, false, false, false, amqp.Table{
+			"x-message-ttl":             int64(tier.delay.Milliseconds()),
+			"x-dead-letter-exchange":    ExchangeNotifications,
+			"x-dead-letter-routing-key": RoutingKeyEmailRetry,
+		}); err != nil {
+			return fmt.Errorf("erro ao declarar fila %s: %w", tier.queueName, err)
+		}
+		if err := ch.QueueBind(tier.queueName, tier.routingKey, ExchangeDLX, false, nil); err != nil {
+			return fmt.Errorf("erro ao vincular fila %s: %w", tier.queueName, err)
+		}
 	}
 
 	if _, err := ch.QueueDeclare(QueueEmailDLQ, true, false, false, false, nil); err != nil {
@@ -155,13 +163,13 @@ func (c *EmailConsumer) Consume(handler func(msg *domain.EmailMessage) error) er
 
 func (c *EmailConsumer) handleFailure(d amqp.Delivery, cause error) {
 	retries := extractRetryCount(d.Headers)
-	if retries >= len(emailRetryDelays) {
+	if retries >= len(emailRetryTiers) {
 		log.Printf("[Email Worker] Limite de tentativas atingido (%d), movendo para DLQ: %v", retries, cause)
 		_ = d.Nack(false, false)
 		return
 	}
 
-	delay := emailRetryDelays[retries]
+	tier := emailRetryTiers[retries]
 	headers := amqp.Table{}
 	for k, v := range d.Headers {
 		headers[k] = v
@@ -175,7 +183,7 @@ func (c *EmailConsumer) handleFailure(d amqp.Delivery, cause error) {
 	err := c.channel.PublishWithContext(
 		ctx,
 		ExchangeDLX,
-		RoutingKeyEmailRetry,
+		tier.routingKey,
 		false,
 		false,
 		amqp.Publishing{
@@ -183,7 +191,6 @@ func (c *EmailConsumer) handleFailure(d amqp.Delivery, cause error) {
 			DeliveryMode: amqp.Persistent,
 			MessageId:    d.MessageId,
 			Headers:      headers,
-			Expiration:   strconv.FormatInt(delay.Milliseconds(), 10),
 			Body:         d.Body,
 		},
 	)
@@ -194,7 +201,7 @@ func (c *EmailConsumer) handleFailure(d amqp.Delivery, cause error) {
 	}
 
 	log.Printf("[Email Worker] Erro ao enviar e-mail (tentativa %d/%d), novo envio em %s: %v",
-		retries+1, len(emailRetryDelays), delay, cause)
+		retries+1, len(emailRetryTiers), tier.delay, cause)
 	_ = d.Ack(false)
 }
 

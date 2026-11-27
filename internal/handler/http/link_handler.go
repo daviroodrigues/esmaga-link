@@ -5,6 +5,9 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
+	_ "time/tzdata"
 
 	"esmaga-link/internal/domain"
 	"esmaga-link/internal/security"
@@ -266,6 +269,7 @@ func (h *LinkHandler) ListMyLinks(w http.ResponseWriter, r *http.Request) {
 // @Security		BearerAuth
 // @Param			code	path		string	true	"Código curto do link"
 // @Param			days	query		int		false	"Quantidade de dias para agregação (1 a 90, padrão 7)"
+// @Param			tz		query		string	false	"Fuso horário IANA para agrupamento diário (ex: America/Sao_Paulo, padrão UTC)"
 // @Success		200		{object}	domain.LinkAnalytics
 // @Failure		400		{object}	ErrorResponse
 // @Failure		401		{object}	ErrorResponse
@@ -296,7 +300,17 @@ func (h *LinkHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 		days = parsedDays
 	}
 
-	stats, err := h.linkService.GetLinkAnalytics(r.Context(), code, claims.UserID, days)
+	loc := time.UTC
+	if rawTZ := strings.TrimSpace(r.URL.Query().Get("tz")); rawTZ != "" {
+		parsedLoc, err := time.LoadLocation(rawTZ)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, "parâmetro tz inválido")
+			return
+		}
+		loc = parsedLoc
+	}
+
+	stats, err := h.linkService.GetLinkAnalytics(r.Context(), code, claims.UserID, days, loc)
 	if err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, service.ErrLinkNotFound) {

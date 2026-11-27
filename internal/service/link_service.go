@@ -294,7 +294,7 @@ func (s *LinkService) invalidateCache(ctx context.Context, shortCode string) {
 	}
 }
 
-func (s *LinkService) GetLinkAnalytics(ctx context.Context, shortCode string, userID uuid.UUID, days int) (*domain.LinkAnalytics, error) {
+func (s *LinkService) GetLinkAnalytics(ctx context.Context, shortCode string, userID uuid.UUID, days int, loc *time.Location) (*domain.LinkAnalytics, error) {
 	link, err := s.linkRepo.GetByCode(ctx, shortCode)
 	if err != nil {
 		return nil, err
@@ -307,7 +307,7 @@ func (s *LinkService) GetLinkAnalytics(ctx context.Context, shortCode string, us
 		return nil, ErrUnauthorizedLink
 	}
 
-	return s.linkRepo.GetAnalyticsByCode(ctx, shortCode, days)
+	return s.linkRepo.GetAnalyticsByCode(ctx, shortCode, days, loc)
 }
 
 func (s *LinkService) ListUserLinks(ctx context.Context, userID uuid.UUID) ([]*domain.Link, error) {

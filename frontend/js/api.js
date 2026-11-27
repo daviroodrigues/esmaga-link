@@ -242,7 +242,12 @@ export async function deleteLink(code) {
 
 export async function getLinkStats(code, days = 7) {
   const safeDays = Math.max(1, Math.min(90, Number(days) || 7));
-  return apiFetch(`/api/v1/links/${encodeURIComponent(code)}/stats?days=${safeDays}`, {
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+  const params = new URLSearchParams({ days: String(safeDays) });
+  if (tz) {
+    params.set('tz', tz);
+  }
+  return apiFetch(`/api/v1/links/${encodeURIComponent(code)}/stats?${params.toString()}`, {
     method: 'GET',
   });
 }

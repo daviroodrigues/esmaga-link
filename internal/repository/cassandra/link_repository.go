@@ -297,9 +297,36 @@ func (r *LinkRepository) InsertClickEvent(ctx context.Context, c *domain.ClickEv
 	return nil
 }
 
-func (r *LinkRepository) GetAnalyticsByCode(ctx context.Context, shortCode string, days int) (*domain.LinkAnalytics, error) {
+func analyticsWindow(nowLocal time.Time, days int, loc *time.Location) (time.Time, time.Time, []string) {
+	if loc == nil {
+		loc = time.UTC
+	}
 	if days <= 0 {
 		days = 7
+	}
+
+	localTodayStart := time.Date(nowLocal.Year(), nowLocal.Month(), nowLocal.Day(), 0, 0, 0, 0, loc)
+	startUTC := localTodayStart.AddDate(0, 0, -(days - 1)).UTC()
+	endUTC := localTodayStart.AddDate(0, 0, 1).UTC()
+
+	firstBucket := time.Date(startUTC.Year(), startUTC.Month(), startUTC.Day(), 0, 0, 0, 0, time.UTC)
+	lastInstant := endUTC.Add(-time.Nanosecond)
+	lastBucket := time.Date(lastInstant.Year(), lastInstant.Month(), lastInstant.Day(), 0, 0, 0, 0, time.UTC)
+
+	var bucketDates []string
+	for d := firstBucket; !d.After(lastBucket); d = d.AddDate(0, 0, 1) {
+		bucketDates = append(bucketDates, d.Format("2006-01-02"))
+	}
+
+	return startUTC, endUTC, bucketDates
+}
+
+func (r *LinkRepository) GetAnalyticsByCode(ctx context.Context, shortCode string, days int, loc *time.Location) (*domain.LinkAnalytics, error) {
+	if days <= 0 {
+		days = 7
+	}
+	if loc == nil {
+		loc = time.UTC
 	}
 
 	analytics := &domain.LinkAnalytics{
@@ -311,17 +338,17 @@ func (r *LinkRepository) GetAnalyticsByCode(ctx context.Context, shortCode strin
 	}
 
 	query := `
-		SELECT ip_address, user_agent, referrer, country, device_type
+		SELECT clicked_at, ip_address, user_agent, referrer, country, device_type
 		FROM click_events
-		WHERE short_code = ? AND bucket_date = ?
+		WHERE short_code = ? AND bucket_date = ? AND clicked_at >= ? AND clicked_at < ?
 	`
 
-	now := time.Now().UTC()
-	for i := 0; i < days; i++ {
-		dateStr := now.AddDate(0, 0, -i).Format("2006-01-02")
-		iter := r.session.Query(query, shortCode, dateStr).WithContext(ctx).Iter()
+	startUTC, endUTC, bucketDates := analyticsWindow(time.Now().In(loc), days, loc)
+	for _, bucketDate := range bucketDates {
+		iter := r.session.Query(query, shortCode, bucketDate, startUTC, endUTC).WithContext(ctx).Iter()
 
 		var (
+			clickedAt  time.Time
 			ip         string
 			ua         string
 			ref        string
@@ -329,7 +356,12 @@ func (r *LinkRepository) GetAnalyticsByCode(ctx context.Context, shortCode strin
 			deviceType string
 		)
 
-		for iter.Scan(&ip, &ua, &ref, &country, &deviceType) {
+		for iter.Scan(&clickedAt, &ip, &ua, &ref, &country, &deviceType) {
+			if clickedAt.Before(startUTC) || !clickedAt.Before(endUTC) {
+				continue
+			}
+
+			dateStr := clickedAt.In(loc).Format("2006-01-02")
 			analytics.TotalClicks++
 			analytics.ClicksByDate[dateStr]++
 

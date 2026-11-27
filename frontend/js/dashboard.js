@@ -685,10 +685,11 @@ function buildDateRange(days) {
   const display = [];
   const now = new Date();
   for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - i));
-    iso.push(d.toISOString().slice(0, 10));
-    const dd = String(d.getUTCDate()).padStart(2, '0');
-    const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    iso.push(`${yyyy}-${mm}-${dd}`);
     display.push(`${dd}/${mm}`);
   }
   return { iso, display };
